@@ -2,8 +2,8 @@
 
 ## Components
 
-### Frontend — `web/`
-A static PWA. Views:
+### Frontend — `server/public/`
+A static PWA (under `server/` so the Plesk Document Root can sit inside the app root). Views:
 - **Bedienteil** — 2-line LCD, status LEDs, numeric keypad, EIN/AUS, function keys, Revision.
 - **Buttons** — momentary push-buttons (Taster) with a status LED; edit mode allows
   reorder (drag & drop) and remove. Three display-only alarm indicators on top.
