@@ -1,6 +1,6 @@
 // ema-webpanel backend
 //
-// Serves the PWA (../web) and a small JSON API that talks to the alarm panel.
+// Serves the PWA (../public) and a small JSON API that talks to the alarm panel.
 // Secrets (panel host, optional AES key, login) come from environment variables
 // (see server/.env.example). Nothing secret is ever sent to the browser.
 
@@ -11,7 +11,9 @@ import { config, panelConfigured } from './config.js';
 import { EmaClient } from './ema/client.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const webDir = path.resolve(__dirname, '../../web');
+// server/public also serves as the webserver Document Root on Plesk; the webserver
+// serves static files from here directly and passes other routes (/api/*) to Node.
+const webDir = path.resolve(__dirname, '../public');
 
 const app = express();
 app.use(express.json());

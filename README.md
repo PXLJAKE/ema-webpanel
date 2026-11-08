@@ -28,14 +28,15 @@ code, binaries, assets, or trademarks from the original application.
 ## Architecture
 
 ```
-┌──────────────┐   HTTPS    ┌─────────────────────┐   HTTP    ┌──────────────┐
-│   PWA (web/) │ ─────────▶ │  Backend (server/)  │ ────────▶ │  Alarm panel │
-│  browser/app │ ◀───────── │  Node.js on Plesk   │ ◀──────── │   (EMA/ÜG)   │
-└──────────────┘  JSON/WS   └─────────────────────┘   XML     └──────────────┘
+┌───────────────────┐  HTTPS  ┌─────────────────────┐   HTTP    ┌──────────────┐
+│ PWA(server/public)│ ──────▶ │  Backend (server/)  │ ────────▶ │  Alarm panel │
+│    browser/app    │ ◀────── │  Node.js on Plesk   │ ◀──────── │   (EMA/ÜG)   │
+└───────────────────┘ JSON/WS └─────────────────────┘   XML     └──────────────┘
 ```
 
-- **Frontend (`web/`)** — static PWA (HTML/CSS/JS). No secrets. Renders the keypad,
-  buttons and status LEDs; all labels come from the panel, not hardcoded.
+- **Frontend (`server/public/`)** — static PWA (HTML/CSS/JS). No secrets. Renders the
+  keypad, buttons and status LEDs; all labels come from the panel, not hardcoded. It lives
+  under `server/` because Plesk requires the web Document Root to sit inside the app root.
 - **Backend (`server/`)** — Node.js. Holds the panel host (and, when enabled, the AES key)
   as **secrets / environment variables**, does the polling and any crypto, parses the
   panel's XML and exposes clean JSON (later: WebSocket for push updates). Login via
@@ -63,10 +64,11 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for details.
 cd server
 cp .env.example .env     # fill in your panel host etc.
 npm install
-npm run dev              # serves the API and the PWA from web/
+npm run dev              # serves the API and the PWA (from server/public)
 ```
 
-Then open the printed URL. Without a configured panel the PWA still runs in demo mode.
+Then open the printed URL (the server serves the PWA from `server/public`). Without a
+configured panel the PWA still runs in demo mode.
 
 ---
 
@@ -75,14 +77,14 @@ Then open the printed URL. Without a configured panel the PWA still runs in demo
 This repo is laid out to deploy with **Plesk → Git**:
 
 1. In Plesk, add this repository under **Git** and enable automatic deployment on push.
-2. Set the **deployment actions** to run in `server/`:
-   ```
-   cd server && npm ci && npm run build --if-present
-   ```
-   and (re)start the Node.js app.
-3. Configure the Node.js app's **document root** / startup file to `server/src/index.js`.
-4. Put the panel host, login and (optional) AES key into the app's **environment variables**
-   in Plesk — not into the repo.
+2. Configure the Node.js app:
+   - **Application Root:** `server`
+   - **Application Startup File:** `src/index.js`
+   - **Document Root:** `server/public` (Plesk requires it to be inside the app root)
+   - Run **NPM install** (`npm install`; a lockfile for `npm ci` can be added later).
+3. Put the panel host, login and (optional) AES key into the app's **environment variables**
+   in Plesk — not into the repo (see `server/.env.example`).
+4. Restart the Node.js app.
 
 Every `git push` then updates the deployment automatically.
 
