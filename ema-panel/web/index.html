@@ -435,7 +435,7 @@ function ledClass(st){ // on|off|blink -> css helper
 // ====================================================================
 //  Anlagen (local, informational — the live host is set in HA options)
 // ====================================================================
-const DEFAULT_SYSTEMS=[{id:'intern',name:'Frietsch Intern',ad:'192.168.178.99:8016'}];
+const DEFAULT_SYSTEMS=[{id:'intern',name:'Meine Anlage',ad:'lokal'}];
 let systems=loadJSON('mb-systems',null);if(!Array.isArray(systems)||!systems.length)systems=DEFAULT_SYSTEMS.slice();
 function saveSystems(){store('mb-systems',JSON.stringify(systems));}
 let favId=load('mb-fav')||'';
