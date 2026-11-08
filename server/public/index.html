@@ -67,7 +67,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 /* Anlagen list */
 .secpad{padding-block:16px 96px}
 .sectitle{font-family:var(--font-head);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 2px 10px}
-.sys-card{display:flex;align-items:center;gap:12px;padding:15px 14px;border:1px solid var(--border);border-radius:var(--r);margin-bottom:10px;background:var(--surface);box-shadow:var(--shadow);width:100%;text-align:left}
+.sys-card{position:relative;display:flex;align-items:center;gap:12px;padding:15px 14px;border:1px solid var(--border);border-radius:var(--r);margin-bottom:10px;background:var(--surface);box-shadow:var(--shadow);width:100%;text-align:left}
 .sys-card.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),var(--shadow)}
 .sys-card .body{flex:1;min-width:0}
 .sys-card .nm{font-weight:700;display:flex;align-items:center;gap:7px}
@@ -77,6 +77,11 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .star.on{color:var(--warn);border-color:var(--warn)}
 .openchev{color:var(--muted);font-size:18px;flex:none}
 .hintbox{font-size:12.5px;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin:4px 2px 14px;line-height:1.5}
+.sys-card .del{position:absolute;top:-8px;left:-8px;width:24px;height:24px;border-radius:50%;background:var(--alarm);color:#fff;border:2px solid var(--surface);display:none;place-items:center;font-size:14px;z-index:3;cursor:pointer}
+#sysList.editing .sys-card{animation:wobble .4s infinite alternate ease-in-out;cursor:grab}
+#sysList.editing .sys-card:active{cursor:grabbing}
+#sysList.editing .sys-card .del{display:grid}
+#sysList.editing .sys-card .star,#sysList.editing .sys-card .openchev{opacity:.3;pointer-events:none}
 
 /* Bedienteil (no-scroll, 2-col) */
 .panel{height:100%;display:flex;flex-direction:column;gap:9px;padding-block:12px 12px}
@@ -224,7 +229,7 @@ body.readonly .keys .key{cursor:not-allowed}
   <main class="main noscroll" id="main">
     <!-- Anlagen -->
     <section id="view-systems" class="secpad" hidden>
-      <div class="sectitle">Deine Anlagen</div>
+      <div class="sechead"><div class="sectitle" style="margin:0">Deine Anlagen</div><button class="editlink" id="editSysLink">Bearbeiten</button></div>
       <div id="sysList"></div>
       <div class="hintbox">Die zuletzt geöffnete Anlage wird beim Start automatisch verbunden. Mit dem ★ legst du eine feste Standard-Anlage fest.</div>
     </section>
@@ -316,22 +321,31 @@ let readOnly=load('mb-readonly')==='1';
 function applyReadOnly(){document.body.classList.toggle('readonly',readOnly);const ro=document.getElementById('robar');if(ro)ro.hidden=!readOnly;}
 
 // ---- systems ----
-let systems=[{id:'intern',name:'Frietsch Intern',ad:'192.168.178.99:8016'},{id:'extern',name:'Frietsch Extern',ad:'…myfritz.net:8016'}];
+const DEFAULT_SYSTEMS=[{id:'intern',name:'Frietsch Intern',ad:'192.168.178.99:8016'},{id:'extern',name:'Frietsch Extern',ad:'…myfritz.net:8016'}];
+function loadSystems(){try{const j=load('mb-systems');if(j){const a=JSON.parse(j);if(Array.isArray(a)&&a.length)return a;}}catch(e){}return DEFAULT_SYSTEMS.slice();}
+let systems=loadSystems();
+function saveSystems(){store('mb-systems',JSON.stringify(systems));}
 let favId=load('mb-fav')||'';
 let lastId=load('mb-last')||'';
 let activeId='';
-function defaultId(){if(favId&&systems.some(s=>s.id===favId))return favId;if(lastId&&systems.some(s=>s.id===lastId))return lastId;return systems[0].id;}
+let editingSys=false;
+function defaultId(){if(favId&&systems.some(s=>s.id===favId))return favId;if(lastId&&systems.some(s=>s.id===lastId))return lastId;return systems.length?systems[0].id:'';}
 function setActive(id,remember){activeId=id;const s=systems.find(x=>x.id===id);if(s)document.getElementById('acctLabel').textContent=s.name+' · '+s.ad;if(remember){lastId=id;store('mb-last',id);}renderSystems();}
 const sysList=document.getElementById('sysList');
-function renderSystems(){sysList.innerHTML='';systems.forEach(s=>{
+function renderSystems(){sysList.innerHTML='';sysList.classList.toggle('editing',editingSys);systems.forEach(s=>{
   const card=document.createElement('div');card.className='sys-card'+(s.id===activeId?' active':'');
-  card.innerHTML='<button class="star '+(s.id===favId?'on':'')+'" title="Als Standard" aria-label="Als Standard">'+(s.id===favId?'★':'☆')+'</button>'+
+  card.innerHTML='<span class="del" aria-label="Entfernen">✕</span>'+
+    '<button class="star '+(s.id===favId?'on':'')+'" title="Als Standard" aria-label="Als Standard">'+(s.id===favId?'★':'☆')+'</button>'+
     '<div class="body"><div class="nm">'+s.name+(s.id===activeId?' <span class="badge">verbunden</span>':(s.id===lastId?' <span class="badge">zuletzt</span>':''))+'</div><div class="ad">'+s.ad+'</div></div>'+
     '<span class="openchev">›</span>';
-  card.querySelector('.star').onclick=(e)=>{e.stopPropagation();favId=(favId===s.id?'':s.id);store('mb-fav',favId);renderSystems();toast(favId?('Standard: '+s.name):'Standard entfernt');};
-  card.querySelector('.body').onclick=()=>{setActive(s.id,true);go('panel');toast('Verbunden: '+s.name);};
-  card.querySelector('.openchev').onclick=()=>{setActive(s.id,true);go('panel');toast('Verbunden: '+s.name);};
+  card.querySelector('.del').onclick=(e)=>{e.stopPropagation();const idx=Array.prototype.indexOf.call(sysList.children,card);if(idx<0)return;const nm=systems[idx].name;systems.splice(idx,1);saveSystems();renderSystems();toast('Entfernt: '+nm);};
+  card.querySelector('.star').onclick=(e)=>{e.stopPropagation();if(editingSys)return;favId=(favId===s.id?'':s.id);store('mb-fav',favId);renderSystems();toast(favId?('Standard: '+s.name):'Standard entfernt');};
+  card.querySelector('.body').onclick=()=>{if(editingSys)return;setActive(s.id,true);go('panel');toast('Verbunden: '+s.name);};
+  card.querySelector('.openchev').onclick=()=>{if(editingSys)return;setActive(s.id,true);go('panel');toast('Verbunden: '+s.name);};
   sysList.appendChild(card);});}
+let sysSortable=null;
+if(window.Sortable){sysSortable=Sortable.create(sysList,{disabled:true,animation:160,filter:'.del,.star,.openchev',preventOnFilter:false,chosenClass:'drag-chosen',ghostClass:'drag-ghost',onEnd:(e)=>{if(e.oldIndex==null||e.newIndex==null||e.oldIndex===e.newIndex)return;const it=systems.splice(e.oldIndex,1)[0];systems.splice(e.newIndex,0,it);saveSystems();}});}
+document.getElementById('editSysLink').onclick=(e)=>{editingSys=!editingSys;e.currentTarget.textContent=editingSys?'Fertig':'Bearbeiten';renderSystems();if(sysSortable)sysSortable.option('disabled',!editingSys);};
 
 // ---- onboarding / login ----
 const onboardBg=document.getElementById('onboardBg'),loginEl=document.getElementById('login'),appEl=document.getElementById('app');
