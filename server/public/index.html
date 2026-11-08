@@ -180,6 +180,11 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 
 .toast{position:fixed;left:50%;bottom:calc(80px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:999px;font-size:13px;font-weight:600;z-index:60;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;white-space:nowrap;max-width:88%;text-align:center}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
+/* The [hidden] attribute must always win over component display rules
+   (.login, .app, section …). Browsers' UA rule is only [hidden]{display:none}
+   without !important, so class selectors would otherwise override it and every
+   layer (login + onboarding + all views) would show at once. */
+[hidden]{display:none!important}
 </style>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Manrope:wght@500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
