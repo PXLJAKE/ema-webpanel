@@ -1,95 +1,77 @@
-# ema-webpanel
+# EMA Webpanel – Home Assistant add-on
 
-A modern, clean **Progressive Web App (PWA)** as a virtual control panel ("Bedienteil")
-for an intrusion alarm panel (EMA), with light and dark mode. It is a ground-up
-reimplementation of an older, no-longer-maintained Android keypad app — rebuilt as a
-responsive web app with a small backend that talks to the panel.
+A modern, fast web keypad for a compatible intrusion alarm panel, running **locally** as a
+Home Assistant add-on. It appears in the HA sidebar (Ingress), works on phone, tablet and
+desktop, and has a light and a dark theme. Nothing leaves your network.
 
-> **Status:** early development. The frontend is a working design prototype with demo
-> data; the backend is a skeleton. Not yet wired to a live panel.
+> **Disclaimer.** This is an **unofficial** community project. It is **not affiliated with,
+> endorsed by or supported by** the manufacturer of the alarm panel or of its original app.
+> It controls a safety-relevant system. **Use it at your own risk, with no warranty** (see
+> [LICENSE](LICENSE)). Do not rely on it as the only way to monitor or operate your alarm system.
 
----
+## Features
 
-## ⚠️ Disclaimer
+- Live display of the panel: LCD text, status LEDs, function buttons and indicator LEDs
+- Virtual keypad (digits, ▲▼, EIN/AUS, function keys, Revision) and the panel's function buttons
+- **View-only by default.** Sending commands is an explicit add-on option (`control_enabled`)
+- Arm/disarm and function buttons always ask for confirmation first
+- Responsive layout: phone (bottom tabs) and tablet/desktop (side rail, wide keypad)
+- Small static Rust binary, no cloud, no account, no telemetry
 
-This is an **independent, unofficial** project. It is **not affiliated with, endorsed by,
-or connected to Honeywell, Novar, or any manufacturer**. All product and company names are
-the property of their respective owners and are used only to describe interoperability.
+## Install
 
-This software controls / displays the state of a **security alarm system**. It is provided
-**"as is", without any warranty**, and is **not a certified safety device**. Do not rely on
-it for life-safety or security-critical functions. Use entirely at your own risk.
+1. In Home Assistant open **Settings → Add-ons → Add-on store → ⋮ → Repositories** and add
+   `https://github.com/PXLJAKE/ema-webpanel`.
+2. Install **Alarm Keypad (EMA)**, open the **Configuration** tab and set the panel address
+   (and user group). Leave **Allow control** off for a first test.
+3. Start the add-on and open **Alarmanlage** in the sidebar.
 
-This repository contains **only original code**. It does **not** include any decompiled
-code, binaries, assets, or trademarks from the original application.
+(Alternatively copy the `ema-panel/` folder into your HA `/addons` share to install it as a
+local add-on.)
 
----
+## Options
 
-## Architecture
+| Option | Default | Meaning |
+|---|---|---|
+| `panel_host` | `192.168.178.99` | IP/hostname of the transmitter unit in your LAN |
+| `panel_port` | `8016` | Port of the unit |
+| `user_group` | `1` | Same group number as in the original app's panel entry |
+| `control_enabled` | `false` | `false` = view only. `true` = keys/buttons send real commands |
+| `poll_interval_ms` | `1000` | How often state is read |
 
-```
-┌───────────────────┐  HTTPS  ┌─────────────────────┐   HTTP    ┌──────────────┐
-│ PWA(server/public)│ ──────▶ │  Backend (server/)  │ ────────▶ │  Alarm panel │
-│    browser/app    │ ◀────── │  Node.js on Plesk   │ ◀──────── │   (EMA/ÜG)   │
-└───────────────────┘ JSON/WS └─────────────────────┘   XML     └──────────────┘
-```
+## Safety model
 
-- **Frontend (`server/public/`)** — static PWA (HTML/CSS/JS). No secrets. Renders the
-  keypad, buttons and status LEDs; all labels come from the panel, not hardcoded. It lives
-  under `server/` because Plesk requires the web Document Root to sit inside the app root.
-- **Backend (`server/`)** — Node.js. Holds the panel host (and, when enabled, the AES key)
-  as **secrets / environment variables**, does the polling and any crypto, parses the
-  panel's XML and exposes clean JSON (later: WebSocket for push updates). Login via
-  email + password so the panel is never exposed directly to the browser.
-- **Panel** — speaks plain HTTP with XML pages. Two modes are supported, mirroring the
-  original app: **plaintext** (no key configured on the panel) and **AES** (a key is set).
-
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for details.
-
----
-
-## Security model
-
-- Panel credentials / AES key live **only on the backend** as environment variables — never
-  in the frontend or the repo.
-- The browser authenticates to the backend (email + password); the backend talks to the panel.
-- **Hardening roadmap:** restrict the panel's port to the backend's IP (firewall), or put it
-  behind a VPN (WireGuard/Tailscale) and close the public port entirely.
-
----
+- Reading state never sends a command. Commands exist only behind `control_enabled`.
+- The backend accepts only a fixed whitelist of keys (no panic/duress keys exist in the UI or API).
+- Every command needs an explicit tap; arm/disarm and buttons need a second confirmation.
+- Commands are never retried automatically, so a press can be lost but never doubled.
+- Every sent command is logged by the add-on.
+- Access is through Home Assistant's own authentication (Ingress); the add-on exposes no port.
 
 ## Development
 
 ```bash
-cd server
-cp .env.example .env     # fill in your panel host etc.
-npm install
-npm run dev              # serves the API and the PWA (from server/public)
+cd ema-panel
+cargo test
+PANEL_HOST=192.168.x.x CONTROL_ENABLED=false PORT=8099 OPTIONS_PATH=/nonexistent cargo run
 ```
 
-Then open the printed URL (the server serves the PWA from `server/public`). Without a
-configured panel the PWA still runs in demo mode.
+The UI is a single self-contained file, `ema-panel/web/index.html`, embedded into the binary.
+All API calls are relative so it works behind the Ingress path.
 
----
+## Notes
 
-## Deployment (Plesk, via Git)
-
-This repo is laid out to deploy with **Plesk → Git**:
-
-1. In Plesk, add this repository under **Git** and enable automatic deployment on push.
-2. Configure the Node.js app:
-   - **Application Root:** `server`
-   - **Application Startup File:** `src/index.js`
-   - **Document Root:** `server/public` (Plesk requires it to be inside the app root)
-   - Run **NPM install** (`npm install`; a lockfile for `npm ci` can be added later).
-3. Put the panel host, login and (optional) AES key into the app's **environment variables**
-   in Plesk — not into the repo (see `server/.env.example`).
-4. Restart the Node.js app.
-
-Every `git push` then updates the deployment automatically.
-
----
+This project was written by observing the traffic of the author's own panel. No vendor code,
+logos or app files are included in this repository.
 
 ## License
 
-[MIT](LICENSE) © PXLJAKE
+MIT – see [LICENSE](LICENSE).
+
+---
+
+### Kurz auf Deutsch
+
+Lokales Home-Assistant-Add-on mit modernem Bedienteil für eine kompatible Einbruchmeldeanlage.
+**Standardmäßig nur Ansicht**; Steuern schaltest du in den Add-on-Optionen frei. EIN/AUS und
+Taster fragen immer nach. Inoffiziell, ohne Gewähr, Nutzung auf eigene Gefahr.
