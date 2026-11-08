@@ -1,0 +1,8 @@
+# Serve text assets as UTF-8. Plesk/Apache may otherwise send Latin-1 (or no
+# charset), which breaks ö/ü/ä and symbols (Ã¶, Â·, …). The page also declares
+# <meta charset="utf-8">, but an HTTP charset header would override that, so set
+# it here too.
+AddDefaultCharset UTF-8
+<IfModule mod_mime.c>
+  AddCharset UTF-8 .html .css .js .webmanifest .json .svg
+</IfModule>
