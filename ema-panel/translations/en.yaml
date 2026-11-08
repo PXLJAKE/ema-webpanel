@@ -1,0 +1,16 @@
+configuration:
+  panel_host:
+    name: Panel address
+    description: IP address or hostname of the transmitter unit on your local network (e.g. 192.168.178.99).
+  panel_port:
+    name: Panel port
+    description: Default is 8016.
+  user_group:
+    name: User group
+    description: The same group number as in the panel entry of the original app (usually 1).
+  control_enabled:
+    name: Allow control
+    description: Off = view only (recommended while testing). On = keys, arm/disarm and buttons send real commands to the panel.
+  poll_interval_ms:
+    name: Poll interval (ms)
+    description: How often the state is read. 1000 is a good value.
