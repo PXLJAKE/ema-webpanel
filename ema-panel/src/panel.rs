@@ -353,7 +353,15 @@ fn describe(e: &reqwest::Error) -> String {
     } else if e.is_connect() {
         "Verbindung abgelehnt/keine Route".into()
     } else {
-        e.to_string()
+        // include the whole cause chain, "error sending request" alone says nothing
+        let mut out = e.to_string();
+        let mut src = std::error::Error::source(e);
+        while let Some(c) = src {
+            out.push_str(" <- ");
+            out.push_str(&c.to_string());
+            src = c.source();
+        }
+        out
     }
 }
 

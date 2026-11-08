@@ -7,6 +7,7 @@
 
 mod config;
 mod panel;
+mod probe;
 
 use axum::{
     extract::State,
@@ -309,6 +310,12 @@ async fn connect_test(State(sh): State<Arc<Shared>>) -> Response {
     )
 }
 
+/// Read-only transport diagnostics (plain GETs without key codes, see probe.rs).
+async fn probe_route(State(sh): State<Arc<Shared>>) -> Response {
+    let r = probe::run(&sh.opts.panel_host, sh.opts.panel_port, &sh.opts.user_group).await;
+    no_store(Json(r).into_response())
+}
+
 #[derive(Deserialize)]
 struct KeyReq {
     key: Option<String>,
@@ -382,6 +389,7 @@ async fn main() {
         .route("/api/health", get(health))
         .route("/api/state", get(state))
         .route("/api/connect-test", get(connect_test))
+        .route("/api/probe", get(probe_route))
         .route("/api/key", post(key))
         .with_state(shared);
 
