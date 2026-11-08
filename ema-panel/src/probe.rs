@@ -71,38 +71,53 @@ fn request(page: &str, group: &str, sid: &str, cnt: &str, host: &str, style: &st
     }
 }
 
+/// One step of a probe sequence: (page, delay before the request in ms, request style).
+type Step = (&'static str, u64, &'static str);
+
+async fn sequence(addr: &str, group: &str, label: &str, steps: &[Step]) -> Value {
+    let mut log = Vec::new();
+    let init = raw_get(addr, &request("ui_init.xml", group, "00", "FFFF", addr, "close"), Duration::from_secs(6)).await;
+    let body = init.get("body").and_then(|b| b.as_str()).unwrap_or("");
+    let (sid, mut cnt) = match (tag(body, "Session_ID"), tag(body, "Counter")) {
+        (Some(a), Some(b)) => (a.to_string(), b.to_string()),
+        _ => return json!({ "sequence": label, "init": init }),
+    };
+    log.push(json!({ "step": "ui_init.xml", "sid": sid, "cnt": cnt }));
+    for (page, delay, style) in steps {
+        if *delay > 0 {
+            tokio::time::sleep(Duration::from_millis(*delay)).await;
+        }
+        let r = raw_get(addr, &request(page, group, &sid, &cnt, addr, style), Duration::from_secs(8)).await;
+        let ok = r.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+        let mut entry = json!({ "step": page, "style": style, "delay": delay, "usedCnt": cnt.clone(), "ok": ok, "ms": r.get("ms") });
+        if ok {
+            let b = r.get("body").and_then(|b| b.as_str()).unwrap_or("");
+            if let Some(c) = tag(b, "Counter") {
+                cnt = c.to_string();
+            }
+            entry["head"] = json!(r.get("head").and_then(|h| h.as_str()).unwrap_or("").lines().next().unwrap_or(""));
+            entry["body"] = json!(b.chars().take(260).collect::<String>());
+        } else {
+            entry["error"] = r.get("error").cloned().unwrap_or(Value::Null);
+        }
+        log.push(entry);
+    }
+    json!({ "sequence": label, "log": log })
+}
+
 pub async fn run(host: &str, port: u16, group: &str) -> Value {
     let addr = format!("{host}:{port}");
-    let hostport = addr.clone();
-    let mut out = Vec::new();
-    // (label, page, request style, delay after init in ms)
-    let variants: [(&str, &str, &str, u64); 6] = [
-        ("io, http/1.1 close, immediate", "ui_io.xml", "close", 0),
-        ("io, http/1.0, immediate", "ui_io.xml", "http10", 0),
-        ("io, android-like headers, immediate", "ui_io.xml", "android", 0),
-        ("io, http/1.1 close, after 1.5 s", "ui_io.xml", "close", 1500),
-        ("control page, http/1.1 close, immediate", "ui_12540.xml", "close", 0),
-        ("control page, android-like headers, after 1.5 s", "ui_12540.xml", "android", 1500),
+    let plan: Vec<(&str, Vec<Step>)> = vec![
+        ("init -> control page", vec![("ui_12540.xml", 0, "close")]),
+        ("init -> special signs -> io -> control", vec![("ui_12540_sz.xml", 0, "close"), ("ui_io.xml", 700, "close"), ("ui_12540.xml", 700, "close")]),
+        ("init -> wait 1 s -> io", vec![("ui_io.xml", 1000, "close")]),
+        ("init -> io with android-like headers", vec![("ui_io.xml", 0, "android")]),
+        ("init -> io with http/1.0", vec![("ui_io.xml", 0, "http10")]),
     ];
-    for (label, page, style, delay) in variants {
-        let init = raw_get(&addr, &request("ui_init.xml", group, "00", "FFFF", &hostport, "close"), Duration::from_secs(6)).await;
-        let mut entry = json!({ "variant": label });
-        let body = init.get("body").and_then(|b| b.as_str()).unwrap_or("");
-        // the stored body is cut for display; re-parse from the head+body only if complete
-        let sid = tag(body, "Session_ID").map(str::to_string);
-        let cnt = tag(body, "Counter").map(str::to_string);
-        match (sid, cnt) {
-            (Some(sid), Some(cnt)) => {
-                if delay > 0 {
-                    tokio::time::sleep(Duration::from_millis(delay)).await;
-                }
-                entry["session"] = json!({ "sid": sid, "cnt": cnt });
-                entry["result"] = raw_get(&addr, &request(page, group, &sid, &cnt, &hostport, style), Duration::from_secs(8)).await;
-            }
-            _ => entry["init"] = init,
-        }
-        out.push(entry);
-        tokio::time::sleep(Duration::from_millis(400)).await;
+    let mut out = Vec::new();
+    for (label, steps) in plan {
+        out.push(sequence(&addr, group, label, &steps).await);
+        tokio::time::sleep(Duration::from_secs(3)).await;
     }
-    json!({ "note": "read-only: only plain GETs without key/button codes", "results": out })
+    json!({ "note": "read-only: only plain GETs without key/button codes; poller paused while probing", "results": out })
 }

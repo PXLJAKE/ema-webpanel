@@ -20,6 +20,7 @@ use config::Options;
 use panel::{Button, Led, LedVal, Panel};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
@@ -70,6 +71,8 @@ struct Shared {
     snap: RwLock<Snapshot>,
     tx: mpsc::UnboundedSender<Cmd>,
     opts: Options,
+    /// set while /api/probe runs so the poller leaves the panel alone
+    paused: AtomicBool,
 }
 
 fn now_ms() -> u64 {
@@ -104,6 +107,11 @@ async fn run_poller(shared: Arc<Shared>, mut rx: mpsc::UnboundedReceiver<Cmd>) {
     let mut fast = 0u32;
 
     loop {
+        if shared.paused.load(Ordering::Relaxed) {
+            init = None; // sessions are cheap, a fresh one after the probe is safest
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            continue;
+        }
         // ---- (re)start a session when needed
         if init.is_none() {
             match panel.init().await {
@@ -312,7 +320,10 @@ async fn connect_test(State(sh): State<Arc<Shared>>) -> Response {
 
 /// Read-only transport diagnostics (plain GETs without key codes, see probe.rs).
 async fn probe_route(State(sh): State<Arc<Shared>>) -> Response {
+    sh.paused.store(true, Ordering::Relaxed);
+    tokio::time::sleep(Duration::from_secs(3)).await;
     let r = probe::run(&sh.opts.panel_host, sh.opts.panel_port, &sh.opts.user_group).await;
+    sh.paused.store(false, Ordering::Relaxed);
     no_store(Json(r).into_response())
 }
 
@@ -380,6 +391,7 @@ async fn main() {
         snap: RwLock::new(Snapshot { mode: "plaintext", control: opts.control_enabled, error: Some("Verbinde …".into()), ..Default::default() }),
         tx,
         opts: opts.clone(),
+        paused: AtomicBool::new(false),
     });
 
     tokio::spawn(run_poller(shared.clone(), rx));
