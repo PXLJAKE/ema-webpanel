@@ -1,0 +1,27 @@
+name: "Alarm Keypad (EMA)"
+version: "0.1.0"
+slug: ema_panel
+description: "Modern web keypad for a compatible intrusion alarm panel. Local, no cloud. Unofficial."
+url: "https://github.com/PXLJAKE/ema-webpanel"
+arch:
+  - amd64
+  - aarch64
+init: false
+startup: application
+boot: auto
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:shield-home
+panel_title: "Alarmanlage"
+options:
+  panel_host: "192.168.178.99"
+  panel_port: 8016
+  user_group: "1"
+  control_enabled: false
+  poll_interval_ms: 1000
+schema:
+  panel_host: str
+  panel_port: port
+  user_group: str
+  control_enabled: bool
+  poll_interval_ms: int(250,10000)

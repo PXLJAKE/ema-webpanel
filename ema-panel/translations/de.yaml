@@ -1,0 +1,16 @@
+configuration:
+  panel_host:
+    name: Adresse der Anlage
+    description: IP-Adresse oder Hostname der Übertragungseinheit im lokalen Netz (z. B. 192.168.178.99).
+  panel_port:
+    name: Port der Anlage
+    description: Standard ist 8016.
+  user_group:
+    name: Benutzergruppe
+    description: Dieselbe Gruppennummer wie in der Anlagen-Einstellung der Original-App (meist 1).
+  control_enabled:
+    name: Steuern erlauben
+    description: Aus = nur Ansicht (empfohlen zum Testen). An = Tasten, EIN/AUS und Taster senden echte Befehle an die Anlage.
+  poll_interval_ms:
+    name: Abfrage-Intervall (ms)
+    description: Wie oft der Zustand abgefragt wird. 1000 ist ein guter Wert.
