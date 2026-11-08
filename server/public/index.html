@@ -1,5 +1,11 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#0b1017">
 <title>MB Remote · Prototyp</title>
-<meta name="claude:viewport-fit-sides" content="cover">
 <style>
 /* Layout: phone-first app shell — sticky header, body, fixed bottom tabs (Anlagen | Bedienteil | Buttons | LEDs). Bedienteil is a 2-column no-scroll screen. */
 :root{
@@ -180,6 +186,9 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 
 .toast{position:fixed;left:50%;bottom:calc(80px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:999px;font-size:13px;font-weight:600;z-index:60;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;white-space:nowrap;max-width:88%;text-align:center}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
+.robar{padding:8px 16px;background:var(--warn-soft);color:var(--fg);font-size:12.5px;font-weight:700;text-align:center;border-bottom:1px solid var(--border)}
+body.readonly .keys{opacity:.55}
+body.readonly .keys .key{cursor:not-allowed}
 /* The [hidden] attribute must always win over component display rules
    (.login, .app, section …). Browsers' UA rule is only [hidden]{display:none}
    without !important, so class selectors would otherwise override it and every
@@ -188,6 +197,8 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 </style>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Manrope:wght@500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+</head>
+<body>
 
 <!-- RETURNING LOGIN -->
 <div class="login" id="login" hidden>
@@ -208,6 +219,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     <button class="iconbtn" id="setBtn" title="Einstellungen" aria-label="Einstellungen">⚙</button>
   </header>
   <div class="demo">Prototyp · Demodaten · nicht mit der echten Anlage verbunden</div>
+  <div class="robar" id="robar" hidden>👁 Nur-Lesen-Modus aktiv · Befehle sind deaktiviert</div>
 
   <main class="main noscroll" id="main">
     <!-- Anlagen -->
@@ -279,6 +291,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
   <h3>Einstellungen</h3>
   <p class="hint">Seiten ein- oder ausblenden.</p>
   <div id="pageToggles"></div>
+  <div class="setrow"><div class="name">Nur beobachten (keine Befehle senden)</div><button class="toggle" id="roToggle" aria-pressed="false" aria-label="Nur beobachten"></button></div>
   <div class="setrow"><div class="name">Intro-Popup erneut anzeigen</div><button class="btn-ghost" id="showIntro">Anzeigen</button></div>
   <div style="margin-top:14px;display:flex;justify-content:space-between;align-items:center">
     <button class="btn-ghost" id="logoutBtn">Abmelden</button>
@@ -298,6 +311,9 @@ let toastT;const toastEl=document.getElementById('toast');
 function toast(m){toastEl.textContent=m;toastEl.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>toastEl.classList.remove('show'),1600);}
 function store(k,v){try{localStorage.setItem(k,v);}catch(e){}}
 function load(k){try{return localStorage.getItem(k);}catch(e){return null;}}
+// ---- read-only ("Nur beobachten") mode: block all command sending ----
+let readOnly=load('mb-readonly')==='1';
+function applyReadOnly(){document.body.classList.toggle('readonly',readOnly);const ro=document.getElementById('robar');if(ro)ro.hidden=!readOnly;}
 
 // ---- systems ----
 let systems=[{id:'intern',name:'Frietsch Intern',ad:'192.168.178.99:8016'},{id:'extern',name:'Frietsch Extern',ad:'…myfritz.net:8016'}];
@@ -337,6 +353,7 @@ const kp=document.getElementById('keypad');
 let entry='';const lcd2=document.getElementById('lcd2');
 function setLcd(t){lcd2.innerHTML=(t||'')+'<span class="cursor"></span>';}
 document.getElementById('view-panel').addEventListener('click',e=>{const b=e.target.closest('[data-k]');if(!b)return;const k=b.dataset.k;
+  if(readOnly){toast('Nur-Lesen aktiv – keine Befehle');return;}
   if(/^[0-9]$/.test(k)){entry=(entry+k).slice(-16);setLcd('Code: '+'•'.repeat(entry.length));}
   else if(k==='EIN'){setLcd('Scharfschaltung …');toast('EIN (Demo)');}
   else if(k==='AUS'){entry='';setLcd('Anlage unscharf');toast('AUS (Demo)');}
@@ -355,7 +372,7 @@ function renderTasters(){bg.innerHTML='';bg.classList.toggle('editing',editing);
   const el=document.createElement('button');el.className='taster'+(t.on?' active':'');
   el.innerHTML='<span class="del" aria-label="Entfernen">✕</span><span class="sled"></span><div class="tname">'+t.n+'</div><div class="tsub">'+(t.on?'aktiv':'Taster')+'</div>';
   el.querySelector('.del').onclick=(e)=>{e.stopPropagation();const idx=Array.prototype.indexOf.call(bg.children,el);if(idx<0)return;const nm=tasters[idx].n;tasters.splice(idx,1);renderTasters();toast('Entfernt: '+nm);};
-  el.onclick=()=>{if(editing)return;el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');toast(t.n+' – gedrückt (Demo)');};
+  el.onclick=()=>{if(editing)return;if(readOnly){toast('Nur-Lesen aktiv – keine Befehle');return;}el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');toast(t.n+' – gedrückt (Demo)');};
   bg.appendChild(el);});}
 renderTasters();
 let sortable=null;
@@ -392,6 +409,14 @@ const pages=[{n:'Bedienteil',on:true},{n:'Bedienteil + Revision',on:true},{n:'Bu
 const pt=document.getElementById('pageToggles');
 pages.forEach(p=>{const r=document.createElement('div');r.className='setrow';r.innerHTML='<div class="name">'+p.n+'</div><button class="toggle" aria-pressed="'+p.on+'" aria-label="'+p.n+'"></button>';r.querySelector('.toggle').onclick=(e)=>{const b=e.currentTarget;b.setAttribute('aria-pressed',b.getAttribute('aria-pressed')!=='true');};pt.appendChild(r);});
 
+// read-only toggle
+const roBtn=document.getElementById('roToggle');
+function syncRo(){roBtn.setAttribute('aria-pressed',readOnly?'true':'false');}
+roBtn.onclick=()=>{readOnly=!readOnly;store('mb-readonly',readOnly?'1':'0');syncRo();applyReadOnly();toast(readOnly?'Nur-Lesen aktiv':'Nur-Lesen aus');};
+syncRo();applyReadOnly();
+
 renderSystems();
 start();
 </script>
+</body>
+</html>
