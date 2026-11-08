@@ -30,9 +30,12 @@ Node.js service that:
   - `ui_io.xml` — LED / display state
   - `ui_12540.xml` — keypad page (model 12540)
   - `ui_12540_sz.xml` — special characters
-- **Request parameters:** `?B-GR=<payload>&CNT=<hex counter>&S-ID=<session id>`
-  - `CNT` starts at `FFFF` and increments (anti-replay).
-  - `S-ID` is the session id from `ui_init.xml`.
+- **Request parameters:** `?B-GR=<group>&S-ID=<session id>&CNT=<counter>`
+  - `B-GR` is the **Benutzergruppe** (user group), sent as-is — *not* an encrypted command.
+  - First call is `ui_init.xml` with `S-ID` empty and `CNT=FFFF`; the response carries
+    `Session_ID` and `Counter`. Each later request uses `S-ID=<session>` and
+    `CNT=<last response Counter>`.
+  - In plaintext mode (no key) the URL is sent raw — reading state needs no crypto.
 - **Response XML fields:** `Text_80_01` / `Text_80_02` (two 80-char LCD lines),
   LED tags `RED_ON|OFF|BLINK_0`, `GREEN_*`, `YELLOW_*`, `Cursor_Pos`, `Cursor_Blink`,
   `Counter`, `Session_ID`, `Revision`.
@@ -52,8 +55,12 @@ The `B-GR` payload is built differently depending on whether the panel has a key
   same code path works now (plaintext) and later (AES) without changes.
 
 ### Still to confirm
-- Exact field order inside the `B-GR` payload (counter / session / key-code layout).
-- Exact XML list tag names for the button / LED lists.
+- Exact XML list tag names for the button / LED lists (need a real capture).
+- Key-press / command payload layout — **not implemented** (the service is read-only).
+
+A read-only connection test (`GET /api/connect-test`, login required) hits the panel,
+returns the parsed LCD snapshot plus the raw XML of each page, and is the intended way to
+discover those real tag names against the live panel.
 
 Best confirmed via a real traffic capture or by reading the panel's own web UI. These are
 needed before the backend's command-building is wired up end-to-end; display/polling can be

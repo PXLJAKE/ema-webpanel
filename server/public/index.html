@@ -199,6 +199,15 @@ body.readonly .keys .key{cursor:not-allowed}
    without !important, so class selectors would otherwise override it and every
    layer (login + onboarding + all views) would show at once. */
 [hidden]{display:none!important}
+.remember{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--muted);margin:2px 0 4px;cursor:pointer;user-select:none}
+.remember input{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
+.loginerr{background:rgba(220,38,38,.12);color:#dc2626;border:1px solid rgba(220,38,38,.3);border-radius:10px;padding:9px 12px;font-size:13px;margin:2px 0 6px}
+.conn-result{margin:6px 0 2px;padding:11px 13px;border-radius:12px;border:1px solid var(--line);background:var(--card);font-size:13px;line-height:1.5}
+.conn-result .ok{color:#16a34a;font-weight:600}
+.conn-result .bad{color:#dc2626;font-weight:600}
+.conn-result .lcd-prev{font-family:'JetBrains Mono',ui-monospace,monospace;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 9px;margin-top:7px;white-space:pre-wrap;word-break:break-word}
+.conn-result details{margin-top:8px}.conn-result summary{cursor:pointer;color:var(--muted)}
+.conn-result pre{max-height:200px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;font-size:11px;white-space:pre-wrap;word-break:break-word;margin:6px 0 0}
 </style>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Manrope:wght@500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
@@ -210,7 +219,9 @@ body.readonly .keys .key{cursor:not-allowed}
   <div class="logo">MB</div>
   <div><h1>Willkommen zurück</h1><p>Melde dich an, um deine Anlage zu steuern.</p></div>
   <div class="field"><label for="email2">E-Mail</label><input id="email2" type="email" value="jake@frietsch.de" autocomplete="username"></div>
-  <div class="field"><label for="pw2">Passwort</label><input id="pw2" type="password" value="········" autocomplete="current-password"></div>
+  <div class="field"><label for="pw2">Passwort</label><input id="pw2" type="password" value="" autocomplete="current-password"></div>
+  <label class="remember"><input type="checkbox" id="remember2" checked> Angemeldet bleiben</label>
+  <div class="loginerr" id="loginErr2" hidden></div>
   <button class="btn-primary" id="loginBtn">Anmelden</button>
 </div>
 
@@ -283,9 +294,10 @@ body.readonly .keys .key{cursor:not-allowed}
     <h2 id="obTitle">Willkommen bei MB&nbsp;Remote</h2>
     <p>Einmal anmelden, dann steuerst du deine Anlage überall.</p>
     <div class="field"><label for="obMail">E-Mail</label><input id="obMail" type="email" value="jake@frietsch.de" autocomplete="username"></div>
-    <div class="field"><label for="obPw">Passwort</label><input id="obPw" type="password" value="········" autocomplete="current-password"></div>
+    <div class="field"><label for="obPw">Passwort</label><input id="obPw" type="password" value="" autocomplete="current-password"></div>
+    <label class="remember"><input type="checkbox" id="obRemember" checked> Angemeldet bleiben</label>
+    <div class="loginerr" id="obErr" hidden></div>
     <button class="btn-primary" id="onboardOk" style="margin-top:4px">Anmelden & loslegen</button>
-    <p style="font-size:11.5px;margin:12px 0 0">Demo · die echte Anmeldung läuft später über dein Plesk-Backend.</p>
   </div>
 </div>
 
@@ -298,6 +310,8 @@ body.readonly .keys .key{cursor:not-allowed}
   <div id="pageToggles"></div>
   <div class="setrow"><div class="name">Nur beobachten (keine Befehle senden)</div><button class="toggle" id="roToggle" aria-pressed="false" aria-label="Nur beobachten"></button></div>
   <div class="setrow"><div class="name">Intro-Popup erneut anzeigen</div><button class="btn-ghost" id="showIntro">Anzeigen</button></div>
+  <div class="setrow"><div class="name">Verbindung zur Anlage testen <span class="hint" style="display:block;margin-top:2px">Nur lesen – es werden keine Befehle gesendet.</span></div><button class="btn-ghost" id="connTestBtn">Testen</button></div>
+  <div class="conn-result" id="connResult" hidden></div>
   <div style="margin-top:14px;display:flex;justify-content:space-between;align-items:center">
     <button class="btn-ghost" id="logoutBtn">Abmelden</button>
     <button class="btn-primary" id="closeSheet" style="width:auto;padding:11px 22px">Fertig</button>
@@ -347,14 +361,58 @@ let sysSortable=null;
 if(window.Sortable){sysSortable=Sortable.create(sysList,{disabled:true,animation:160,filter:'.del,.star,.openchev',preventOnFilter:false,chosenClass:'drag-chosen',ghostClass:'drag-ghost',onEnd:(e)=>{if(e.oldIndex==null||e.newIndex==null||e.oldIndex===e.newIndex)return;const it=systems.splice(e.oldIndex,1)[0];systems.splice(e.newIndex,0,it);saveSystems();}});}
 document.getElementById('editSysLink').onclick=(e)=>{editingSys=!editingSys;e.currentTarget.textContent=editingSys?'Fertig':'Bearbeiten';renderSystems();if(sysSortable)sysSortable.option('disabled',!editingSys);};
 
-// ---- onboarding / login ----
+// ---- onboarding / login (real auth against the backend, demo fallback) ----
 const onboardBg=document.getElementById('onboardBg'),loginEl=document.getElementById('login'),appEl=document.getElementById('app');
-function enterApp(){loginEl.hidden=true;appEl.hidden=false;setActive(defaultId(),false);go('panel');}
-function start(){const seen=load('mb-intro')==='1';if(seen){loginEl.hidden=false;}else{onboardBg.classList.add('open');}}
-document.getElementById('onboardOk').onclick=()=>{store('mb-intro','1');onboardBg.classList.remove('open');enterApp();};
-document.getElementById('loginBtn').onclick=enterApp;
-document.getElementById('logoutBtn').onclick=()=>{closeSheet();appEl.hidden=true;loginEl.hidden=false;};
+function enterApp(){loginEl.hidden=true;onboardBg.classList.remove('open');appEl.hidden=false;setActive(defaultId(),false);go('panel');}
+// Try the backend. {ok:true} on success; {ok:true,demo:true} when no backend/not
+// configured (prototype still usable); {ok:false,error} on a real auth failure.
+async function doLogin(email,password,remember){
+  try{
+    const r=await fetch('/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email,password,remember})});
+    if(r.ok)return{ok:true};
+    if(r.status===501)return{ok:true,demo:true}; // login not configured yet
+    let d={};try{d=await r.json();}catch(e){}
+    return{ok:false,error:d.error==='invalid credentials'?'E-Mail oder Passwort falsch.':(d.error||('Fehler '+r.status))};
+  }catch(e){return{ok:true,demo:true};} // backend unreachable -> demo mode
+}
+function showErr(el,msg){if(!el)return;if(msg){el.textContent=msg;el.hidden=false;}else{el.hidden=true;}}
+async function start(){
+  try{const r=await fetch('/api/session');if(r.ok){const d=await r.json();if(d.authenticated){enterApp();return;}}}catch(e){}
+  const seen=load('mb-intro')==='1';if(seen){loginEl.hidden=false;}else{onboardBg.classList.add('open');}
+}
+async function handleLogin(mailEl,pwEl,remEl,errEl,btn){
+  const email=mailEl.value.trim(),pw=pwEl.value,remember=remEl?remEl.checked:true;
+  if(!email||!pw){showErr(errEl,'Bitte E-Mail und Passwort eingeben.');return;}
+  showErr(errEl,'');const old=btn.textContent;btn.disabled=true;btn.textContent='Anmelden…';
+  const res=await doLogin(email,pw,remember);
+  btn.disabled=false;btn.textContent=old;
+  if(res.ok){store('mb-intro','1');enterApp();}else{showErr(errEl,res.error);}
+}
+document.getElementById('onboardOk').onclick=()=>handleLogin(document.getElementById('obMail'),document.getElementById('obPw'),document.getElementById('obRemember'),document.getElementById('obErr'),document.getElementById('onboardOk'));
+document.getElementById('loginBtn').onclick=()=>handleLogin(document.getElementById('email2'),document.getElementById('pw2'),document.getElementById('remember2'),document.getElementById('loginErr2'),document.getElementById('loginBtn'));
+document.getElementById('pw2').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('loginBtn').click();});
+document.getElementById('obPw').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('onboardOk').click();});
+document.getElementById('logoutBtn').onclick=async()=>{closeSheet();try{await fetch('/api/logout',{method:'POST'});}catch(e){}appEl.hidden=true;loginEl.hidden=false;};
 document.getElementById('showIntro').onclick=()=>{closeSheet();onboardBg.classList.add('open');};
+// ---- read-only connection test ----
+function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+document.getElementById('connTestBtn').onclick=async()=>{
+  const box=document.getElementById('connResult'),btn=document.getElementById('connTestBtn');
+  box.hidden=false;box.innerHTML='Teste Verbindung…';btn.disabled=true;
+  try{
+    const r=await fetch('/api/connect-test');
+    let d={};try{d=await r.json();}catch(e){}
+    if(r.status===401){box.innerHTML='<span class="bad">Nicht angemeldet.</span> Bitte neu anmelden.';}
+    else if(r.status===503){box.innerHTML='<span class="bad">Anlage nicht konfiguriert</span> – im Backend (EMA_HOST) setzen.';}
+    else if(d&&d.ok){
+      let h='<span class="ok">✓ Verbunden</span> · '+esc(d.host)+' · '+esc(d.mode)+'<br>Session: '+esc(d.sessionId||'–');
+      if(d.state){h+='<div class="lcd-prev">'+esc(d.state.line1||'')+'\n'+esc(d.state.line2||'')+'</div>';}
+      if(d.pages&&d.pages.length){h+='<details><summary>Rohdaten ('+d.pages.length+' Seiten)</summary>';d.pages.forEach(p=>{h+='<div style="margin-top:6px;font-weight:600">'+esc(p.page)+' ('+p.status+')</div><pre>'+esc((p.xml||'').slice(0,4000))+'</pre>';});h+='</details>';}
+      box.innerHTML=h;
+    }else{box.innerHTML='<span class="bad">Fehlgeschlagen</span>'+(d&&d.error?': '+esc(d.error):'');}
+  }catch(e){box.innerHTML='<span class="bad">Fehler</span>: '+esc(e.message||e);}
+  btn.disabled=false;
+};
 
 // ---- status pills ----
 const statuses=[{n:'Betrieb',s:'on'},{n:'Sum. Alarm',s:''},{n:'Sum. Störung',s:'warn'},{n:'Sys. Störung',s:''},{n:'Einbruch',s:''},{n:'Sabotage',s:''},{n:'Überfall',s:''},{n:'Pol.-Notruf',s:''}];
