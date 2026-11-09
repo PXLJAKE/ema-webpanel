@@ -17,6 +17,16 @@ pub struct Options {
     pub control_enabled: bool,
     #[serde(default = "default_poll")]
     pub poll_interval_ms: u64,
+    /// Publish the panel's buttons and LEDs as Home Assistant entities (MQTT discovery),
+    /// fed by a permanent background session that never touches the keypad page.
+    #[serde(default)]
+    pub mqtt_entities: bool,
+    /// User group for that background session; empty = the system's own group.
+    #[serde(default)]
+    pub mqtt_group: String,
+    /// Offer the Taster as HA buttons (only while control is on as well). Default off.
+    #[serde(default)]
+    pub mqtt_buttons: bool,
 }
 
 fn default_port() -> u16 {
@@ -72,6 +82,13 @@ impl Options {
             poll_interval_ms: env("POLL_INTERVAL_MS")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(1000),
+            mqtt_entities: env("MQTT_ENTITIES")
+                .map(|v| v == "true" || v == "1")
+                .unwrap_or(false),
+            mqtt_group: env("MQTT_GROUP").unwrap_or_default(),
+            mqtt_buttons: env("MQTT_BUTTONS")
+                .map(|v| v == "true" || v == "1")
+                .unwrap_or(false),
         }
     }
 }

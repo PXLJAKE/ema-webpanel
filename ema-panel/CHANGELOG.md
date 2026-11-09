@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0
+- Home Assistant entities over MQTT discovery (option `mqtt_entities`, off by default; uses the Mosquitto broker, credentials come from the Supervisor). One device per system with binary sensors for the 8 LEDs of the LED page, the 8 Taster LEDs, the 3 indicators and the connection.
+- A permanent background session feeds them. It only reads the button/LED page (`ui_io`) and never the keypad page, so the keypad stays free for the app and the original keypad. Option `mqtt_group` gives it a user group of its own (e.g. 2, restricted in the panel to buttons and LEDs).
+- Taster as HA buttons only while *Steuern erlauben* and the option `mqtt_buttons` are both on (both off by default). Presses are whitelisted, logged and never retried; switching control off removes the buttons from HA.
+- Outside HA: `MQTT_ENTITIES=1`, `MQTT_HOST`, `MQTT_PORT`, `MQTT_USER`, `MQTT_PASSWORD`, `MQTT_GROUP`, `MQTT_BUTTONS`.
+
 ## 0.4.1
 - Diagnostics: `GET /api/probe?mode=lock&group2=2` checks, with plain read-only GETs, whether a session that only reads the button/LED page blocks the keypad, whether a locked keypad answer still carries the status lamps, and what a second user group gets. Groundwork for Home Assistant entities.
 
