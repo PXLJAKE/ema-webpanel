@@ -60,7 +60,16 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .dot{width:9px;height:9px;border-radius:50%;background:var(--idle);flex:none;transition:background .2s,box-shadow .2s}
 .conn.live .dot{background:var(--ok);box-shadow:0 0 0 3px var(--ok-soft)}
 .conn.bad .dot{background:var(--alarm);box-shadow:0 0 0 3px var(--alarm-soft)}
+.conn{cursor:pointer}
 .conn .ctxt::after{content:"…"}
+.btn-ghost.discbtn{padding:7px 11px;font-size:12.5px;flex:none;color:var(--alarm);border-color:var(--alarm-soft)}
+@media (max-width:480px){.brand .txt{display:none}}
+.discbtn[hidden]{display:none}
+.sysconn{display:flex;align-items:center;gap:12px;justify-content:space-between;margin:0 2px 14px;padding:13px 14px;border:1px solid var(--border);border-radius:14px;background:var(--surface)}
+.sysconn .t{font-size:13.5px;line-height:1.4;min-width:0}.sysconn .t small{display:block;color:var(--muted);font-size:12px}
+.sysconn .btn-primary{width:auto;padding:10px 18px;font-size:14px;flex:none}
+.modal .row2{display:flex;gap:10px}
+.modal .row2 button{flex:1;text-align:center}
 .conn.live .ctxt::after{content:""}
 .conn.bad .ctxt::after{content:""}
 .main{flex:1;min-height:0;overflow:auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
@@ -278,6 +287,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     <div class="brand"><div class="logo">AK</div><div class="txt"><b>Alarm&nbsp;Keypad</b><span id="acctLabel">Alarmzentrale · lokal</span></div></div>
     <div class="spacer"></div>
     <div class="conn" id="conn" title="Verbindung"><span class="dot"></span><span class="ctxt" id="connTxt">verbinde</span></div>
+    <button class="btn-ghost discbtn" id="discBtn" hidden title="Verbindung zur Anlage trennen">Trennen</button>
     <button class="iconbtn" id="themeBtn" title="Hell/Dunkel" aria-label="Hell/Dunkel umschalten">◐</button>
     <button class="iconbtn" id="setBtn" title="Einstellungen" aria-label="Einstellungen">⚙</button>
   </header>
@@ -287,6 +297,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     <!-- Anlagen -->
     <section id="view-systems" class="secpad" hidden>
       <div class="sechead"><div class="sectitle" style="margin:0">Deine Anlagen</div><button class="editlink" id="editSysLink">Bearbeiten</button></div>
+      <div class="sysconn" id="sysConn"><div class="t" id="sysConnTxt"></div><button class="btn-primary" id="sysConnBtn">Verbinden</button></div>
       <div id="sysList"></div>
       <div class="hintbox">Die aktive Verbindung zur Anlage wird in den <b>Add-on-Einstellungen von Home Assistant</b> festgelegt (Host, Port, Gruppe). Diese Liste dient nur zur Übersicht.</div>
     </section>
@@ -349,6 +360,19 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
       <li><span class="b">🔌</span><div>Unter „Verbindung testen" siehst du die Rohdaten der Anlage.</div></li>
     </ul>
     <button class="btn-primary" id="introOk">Verstanden</button>
+  </div>
+</div>
+
+<!-- CONNECT -->
+<div class="modal-bg" id="connBg">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cnTitle">
+    <div class="logo">AK</div>
+    <h2 id="cnTitle">Mit der Anlage verbinden?</h2>
+    <p id="cnMsg">Am Bedienteil der Anlage kann immer nur ein Benutzer gleichzeitig angemeldet sein. Deshalb verbindet sich Alarm&nbsp;Keypad erst, wenn du es willst, und trennt nach 5&nbsp;Minuten ohne Bedienung automatisch.</p>
+    <div class="row2">
+      <button class="btn-ghost" id="cnLater">Später</button>
+      <button class="btn-primary" id="cnYes">Verbinden</button>
+    </div>
   </div>
 </div>
 
@@ -642,7 +666,7 @@ TABS.forEach(t=>{const on=hiddenTabs.indexOf(t.v)<0;const r=document.createEleme
 
 // intro modal (info only)
 const introBg=document.getElementById('introBg');
-document.getElementById('introOk').onclick=()=>{store('mb-introseen','1');introBg.classList.remove('open');};
+document.getElementById('introOk').onclick=()=>{store('mb-introseen','1');introBg.classList.remove('open');maybeShowConnect();};
 document.getElementById('showIntro').onclick=()=>{closeSheet();introBg.classList.add('open');};
 
 // connection test (read-only) -> relative api/connect-test
@@ -668,10 +692,48 @@ document.getElementById('connTestBtn').onclick=async()=>{
 // ====================================================================
 const connEl=document.getElementById('conn'),connTxt=document.getElementById('connTxt');
 function setConn(state,label){connEl.className='conn'+(state?' '+state:'');connTxt.textContent=label;connEl.title=label;}
+// ---- connect on demand: the panel allows one keypad user at a time ----
+let stActive=false,stExpires=0,stConnected=false,stFetchErr=false,cnDismissed=false,wasActive=null,expiredNote=false;
+const connBg=document.getElementById('connBg');
+async function postJSON(url){const r=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:'{}',cache:'no-store'});let d={};try{d=await r.json();}catch(e){}if(!r.ok||!d.ok)throw new Error((d&&d.error)||('HTTP '+r.status));return d;}
+async function doConnect(){connBg.classList.remove('open');cnDismissed=false;try{await postJSON('api/connect');stActive=true;stExpires=Date.now()+300000;renderConn();pollOnce();}catch(e){toast('Verbinden fehlgeschlagen: '+(e.message||e));}}
+async function doDisconnect(){try{await postJSON('api/disconnect');stActive=false;stConnected=false;cnDismissed=true;renderConn();pollOnce();toast('Getrennt');}catch(e){toast('Trennen fehlgeschlagen: '+(e.message||e));}}
+function fmtLeft(ms){const t=Math.max(0,Math.ceil(ms/1000));return Math.floor(t/60)+':'+String(t%60).padStart(2,'0');}
+function renderConn(){
+  const left=stExpires-Date.now();
+  if(stFetchErr){setConn('bad','Backend nicht erreichbar');}
+  else if(stActive&&stConnected){setConn('live','live '+fmtLeft(left));}
+  else if(stActive){setConn('','verbinde');}
+  else{setConn('bad','getrennt');}
+  document.getElementById('discBtn').hidden=!stActive;
+  const t=document.getElementById('sysConnTxt'),b=document.getElementById('sysConnBtn');
+  if(stActive){t.innerHTML='<b>'+(stConnected?'Verbunden':'Verbinde …')+'</b><small>Wird in '+fmtLeft(left)+' min getrennt, wenn nichts bedient wird.</small>';b.textContent='Trennen';b.className='btn-ghost';}
+  else{t.innerHTML='<b>Nicht verbunden</b><small>Die Anlage ist frei, z. B. für die Original-App.</small>';b.textContent='Verbinden';b.className='btn-primary';}
+}
+function maybeShowConnect(){
+  if(stFetchErr||stActive||cnDismissed||introBg.classList.contains('open')){return;}
+  document.getElementById('cnTitle').textContent=expiredNote?'Verbindung getrennt':'Mit der Anlage verbinden?';
+  document.getElementById('cnMsg').innerHTML=(expiredNote?'Die Verbindung wurde nach 5&nbsp;Minuten ohne Bedienung getrennt, damit die Anlage für andere frei ist. ':'')+(expiredNote?'Neu verbinden?':'Am Bedienteil der Anlage kann immer nur ein Benutzer gleichzeitig angemeldet sein. Deshalb verbindet sich Alarm&nbsp;Keypad erst, wenn du es willst, und trennt nach 5&nbsp;Minuten ohne Bedienung automatisch.');
+  connBg.classList.add('open');
+}
+document.getElementById('cnYes').onclick=doConnect;
+document.getElementById('cnLater').onclick=()=>{cnDismissed=true;expiredNote=false;connBg.classList.remove('open');};
+document.getElementById('discBtn').onclick=doDisconnect;
+document.getElementById('sysConnBtn').onclick=()=>{if(stActive)doDisconnect();else doConnect();};
+// tap on the status pill: extend while connected, ask to connect otherwise
+document.getElementById('conn').onclick=()=>{if(stActive){doConnect();toast('Verbindung verlängert (5 min)');}else{cnDismissed=false;maybeShowConnect();}};
+setInterval(renderConn,1000);
 function applyState(d){
+  stFetchErr=!!(d&&d.__fetchError);
   const connected=!!(d&&d.connected);
-  if(connected){setConn('live','live');}
-  else{setConn('bad',d&&d.error?'nicht verbunden':'nicht verbunden');}
+  if(!stFetchErr){
+    stActive=!!(d&&d.active);stExpires=(d&&d.expiresAt)||0;stConnected=connected;
+    if(wasActive===true&&!stActive&&!cnDismissed){expiredNote=true;}
+    if(stActive){cnDismissed=false;expiredNote=false;connBg.classList.remove('open');}
+    wasActive=stActive;
+  }
+  renderConn();
+  maybeShowConnect();
   setLcd(d,connected);
   // control comes from the add-on option (api/state mirrors api/health); an unreachable backend always means view-only
   if(d&&typeof d.control==='boolean'&&!d.__fetchError)applyControl(d.control);
