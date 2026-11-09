@@ -1,22 +1,44 @@
 configuration:
   panel_host:
     name: Adresse der Anlage
-    description: IP-Adresse oder Hostname der Übertragungseinheit im lokalen Netz (z. B. 192.168.178.99). Nur für die erste Anlage beim ersten Start; weitere Anlagen und Änderungen machst du in der App unter „Anlagen“.
+    description: >-
+      IP-Adresse oder Hostname der IP-Übertragungseinheit in deinem Netzwerk, z. B. 192.168.178.99.
+      Wird nur beim allerersten Start für die erste Anlage verwendet. Danach legst du Anlagen in
+      der App unter „Anlagen“ an und änderst sie dort.
   panel_port:
     name: Port der Anlage
-    description: Standard ist 8016.
+    description: Port der IP-Übertragungseinheit. Meistens 8016.
   user_group:
     name: Benutzergruppe
-    description: Dieselbe Gruppennummer wie in der Anlagen-Einstellung der Original-App (meist 1).
+    description: >-
+      Gruppennummer für die erste Anlage, wie in der Original-App (meistens 1). Später stellst du
+      die Gruppe in der App pro Anlage ein.
   control_enabled:
     name: Steuern erlauben
-    description: Aus = nur Ansicht (empfohlen zum Testen). An = Tasten, EIN/AUS und Taster senden echte Befehle. Lässt sich auch in der App unter ⚙ Einstellungen umschalten; eine Änderung hier gilt ab dem nächsten Start des Add-ons.
+    description: >-
+      Aus = nur ansehen, es werden keine Befehle gesendet (für den Anfang empfohlen). An = Tasten,
+      EIN, AUS und die Taster senden echte Befehle; bei EIN, AUS und Tastern fragt die App vorher
+      nach. Lässt sich auch in der App unter ⚙ Einstellungen umschalten. Eine Änderung hier gilt
+      nach dem Neustart des Add-ons.
   poll_interval_ms:
     name: Abfrage-Intervall (ms)
-    description: Wie oft der Zustand abgefragt wird. 1000 ist ein guter Wert. Auch in der App einstellbar; eine Änderung hier gilt ab dem nächsten Start.
+    description: >-
+      Wie oft der Zustand gelesen wird, solange eine Verbindung besteht. 1000 (einmal pro Sekunde)
+      passt gut. Auch in der App einstellbar. Eine Änderung hier gilt nach dem Neustart des Add-ons.
   mqtt_entities:
     name: Entitäten in Home Assistant (MQTT)
-    description: Zeigt Taster, LEDs und Anzeigen als Entitäten in Home Assistant (für Dashboards und Automationen, z. B. Einbruch-Benachrichtigung). Braucht den Mosquitto-Broker. Dafür hält das Add-on eine eigene Verbindung, die nur die Taster/LED-Seite liest und das Bedienteil frei lässt.
+    description: >-
+      Stellt Taster, LEDs und Anzeigen der Anlage als Entitäten in Home Assistant bereit, für
+      Dashboards und Automationen wie eine Einbruch-Benachrichtigung. Braucht das Add-on
+      „Mosquitto broker“. Nutzt eine eigene Verbindung, die nur liest und das Bedienteil nie
+      belegt, die App und das echte Bedienteil bleiben also frei.
   mqtt_buttons:
     name: Taster in Home Assistant
-    description: Bietet die Taster als Schaltflächen in Home Assistant an. Wirkt nur, wenn auch „Steuern erlauben“ an ist. Feuer, Wasser und Heizung bleiben reine Anzeige.
+    description: >-
+      Bietet die Taster der Anlage zusätzlich als Schaltflächen in Home Assistant an. Wirkt nur,
+      wenn „Steuern erlauben“ an ist. Feuer, Wasser und Heizung bleiben immer reine Anzeigen.
+  language:
+    name: Sprache
+    description: >-
+      Sprache der App und der Entitätsnamen. „auto“ folgt der Sprache von Home Assistant (Deutsch
+      oder Englisch, alles andere wird Englisch). Eine Änderung gilt nach dem Neustart des Add-ons.

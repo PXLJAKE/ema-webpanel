@@ -379,6 +379,22 @@ pub fn led_label(tag: &str) -> String {
     .to_string()
 }
 
+/// English label for the same LEDs (Home Assistant entity names when the language is English).
+pub fn led_label_en(tag: &str) -> String {
+    match tag {
+        "Betrieb" => "Operation",
+        "S_Alarm" => "Common alarm",
+        "S_Stoerung" => "Common fault",
+        "Sys_Stoerung" => "System fault",
+        "Einbruch" => "Intrusion",
+        "Sabotage" => "Tamper",
+        "Ueberfall" => "Hold-up",
+        "Pol_Not" => "Police call",
+        other => other,
+    }
+    .to_string()
+}
+
 // ---------------------------------------------------------------- transport
 
 /// The panel numbers its answers; the next request must carry the answered counter plus one

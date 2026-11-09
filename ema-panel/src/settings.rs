@@ -281,6 +281,7 @@ mod tests {
             poll_interval_ms: poll,
             mqtt_entities: false,
             mqtt_buttons: false,
+            language: "auto".into(),
         }
     }
 

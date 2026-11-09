@@ -115,6 +115,10 @@ struct Shared {
     wanted_until: AtomicU64,
     /// start-up options (MQTT entities etc.)
     opts: Options,
+    /// resolved language ("en" or "de") for Home Assistant entity names and the UI default
+    lang: &'static str,
+    /// true when `lang` was chosen in the options or reported by Home Assistant (not a guess)
+    lang_known: bool,
 }
 
 fn now_ms() -> u64 {
@@ -404,8 +408,60 @@ fn no_store(mut r: Response) -> Response {
     r
 }
 
-async fn index() -> Response {
-    no_store(Html(INDEX_HTML).into_response())
+/// The page is sent with the language choice filled in, so it can pick its texts before the
+/// first paint: `data-lang-opt` is the add-on option, `data-server-lang` the resolved language.
+async fn index(State(sh): State<Arc<Shared>>) -> Response {
+    let opt = config::fixed_language(&sh.opts.language).unwrap_or("auto");
+    let html = INDEX_HTML.replacen(
+        "<html lang=\"de\">",
+        &format!(
+            "<html lang=\"{l}\" data-lang-opt=\"{opt}\" data-server-lang=\"{k}\">",
+            l = sh.lang,
+            k = if sh.lang_known { sh.lang } else { "" }
+        ),
+        1,
+    );
+    no_store(Html(html).into_response())
+}
+
+/// "auto": ask Home Assistant for its language (needs `homeassistant_api`), else English.
+/// The flag says whether the result is a real choice (option or HA) rather than the fallback.
+async fn resolve_language(opts: &Options) -> (&'static str, bool) {
+    if let Some(l) = config::fixed_language(&opts.language) {
+        return (l, true);
+    }
+    let Some(token) = std::env::var("SUPERVISOR_TOKEN")
+        .ok()
+        .filter(|t| !t.is_empty())
+    else {
+        // standalone: the browser's language decides in the page
+        return ("en", false);
+    };
+    for attempt in 0..3 {
+        let res = reqwest::Client::new()
+            .get("http://supervisor/core/api/config")
+            .header("Authorization", format!("Bearer {token}"))
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await;
+        if let Ok(r) = res {
+            if let Some(v) = r
+                .text()
+                .await
+                .ok()
+                .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+            {
+                if let Some(l) = v.get("language").and_then(|x| x.as_str()) {
+                    return (config::lang_from_locale(l), true);
+                }
+            }
+        }
+        if attempt < 2 {
+            tokio::time::sleep(Duration::from_secs(3)).await;
+        }
+    }
+    eprintln!("Language: Home Assistant did not answer, using English");
+    ("en", false)
 }
 
 async fn health(State(sh): State<Arc<Shared>>) -> Response {
@@ -420,6 +476,7 @@ async fn health(State(sh): State<Arc<Shared>>) -> Response {
             "mode": "plaintext",
             "runMode": sh.settings.mode,
             "authRequired": sh.settings.auth_required(),
+            "language": sh.lang,
         }))
         .into_response(),
     )
@@ -737,9 +794,9 @@ async fn settings_save(State(sh): State<Arc<Shared>>, Json(req): Json<SettingsRe
             println!(
                 "{}",
                 if on {
-                    "WARNUNG: Steuern wurde in der Oberfläche eingeschaltet."
+                    "WARNING: control was switched on in the app."
                 } else {
-                    "Steuern wurde in der Oberfläche ausgeschaltet (nur lesen)."
+                    "Control was switched off in the app (view only)."
                 }
             );
         }
@@ -985,12 +1042,12 @@ async fn main() {
         }
     );
     if settings.control() {
-        println!("WARNUNG: Steuern ist aktiviert – Tastendrücke werden an die Anlage gesendet.");
+        println!("WARNING: control is on, key presses are sent to the panel.");
     } else {
-        println!("Nur-Lesen-Modus: es werden keine Befehle an die Anlage gesendet.");
+        println!("View-only mode: no commands are sent to the panel.");
     }
     if mode == Mode::Standalone && !settings.has_password() {
-        println!("Hinweis: kein Passwort gesetzt. Wer die Seite erreicht, sieht die Anlage. Passwort in den Einstellungen festlegen.");
+        println!("Note: no password set. Anyone who can reach the page sees the panel. Set one in the app settings.");
     }
 
     // first start only: the options (HA) or env vars become the first system, afterwards the UI manages the list
@@ -1009,6 +1066,9 @@ async fn main() {
     );
     println!("{} system(s) configured", store.list().len());
 
+    let (lang, lang_known) = resolve_language(&opts).await;
+    println!("Language: {lang} (option: {})", opts.language);
+
     let (tx, rx) = mpsc::unbounded_channel();
     let shared = Arc::new(Shared {
         snap: RwLock::new(Snapshot {
@@ -1024,6 +1084,8 @@ async fn main() {
         systems: store,
         target: RwLock::new(None),
         opts: opts.clone(),
+        lang,
+        lang_known,
     });
 
     tokio::spawn(run_poller(shared.clone(), rx));

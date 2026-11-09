@@ -1,281 +1,296 @@
-# Einrichtung Schritt für Schritt
+# Step-by-step setup
 
-Diese Anleitung führt dich von null bis zum fertigen Bedienteil, wahlweise als
-**Home-Assistant-Add-on** oder als **Docker-Container**, und optional bis zu Sensoren und
-Tastern in Home Assistant.
+*Deutsche Version: [SETUP.de.md](SETUP.de.md)*
 
-> Inoffizielles Projekt, ohne Gewähr. Die App bedient eine echte Alarmanlage. Lass beim ersten
-> Test **„Steuern erlauben“ aus**, dann kann nichts passieren.
+This guide takes you from zero to a working keypad, either as a **Home Assistant add-on** or as
+a **Docker container**, and optionally on to sensors and buttons in Home Assistant.
 
-**Inhalt**
+> Unofficial project, no warranty. The app operates a real alarm system. Leave **Allow control
+> off** for your first test, then nothing can happen.
 
-1. [Was du brauchst](#1-was-du-brauchst)
-2. [Daten der Anlage herausfinden](#2-daten-der-anlage-herausfinden)
-3. [Weg A: Home-Assistant-Add-on](#3-weg-a-home-assistant-add-on)
-4. [Weg B: Docker (ohne Home Assistant)](#4-weg-b-docker-ohne-home-assistant)
-5. [Anlagen anlegen und verbinden](#5-anlagen-anlegen-und-verbinden)
-6. [Steuern einschalten](#6-steuern-einschalten)
-7. [Sensoren und Taster in Home Assistant (MQTT)](#7-sensoren-und-taster-in-home-assistant-mqtt)
-8. [Als App installieren](#8-als-app-installieren)
-9. [Aktualisieren](#9-aktualisieren)
-10. [Fehlerbehebung](#10-fehlerbehebung)
+**Contents**
+
+1. [What you need](#1-what-you-need)
+2. [Find your panel's details](#2-find-your-panels-details)
+3. [Option A: Home Assistant add-on](#3-option-a-home-assistant-add-on)
+4. [Option B: Docker (without Home Assistant)](#4-option-b-docker-without-home-assistant)
+5. [Add systems and connect](#5-add-systems-and-connect)
+6. [Switch on control](#6-switch-on-control)
+7. [Sensors and buttons in Home Assistant (MQTT)](#7-sensors-and-buttons-in-home-assistant-mqtt)
+8. [Install as an app](#8-install-as-an-app)
+9. [Updating](#9-updating)
+10. [Language](#10-language)
+11. [Troubleshooting](#11-troubleshooting)
 
 ---
 
-## 1. Was du brauchst
+## 1. What you need
 
-- Eine Einbruchmeldeanlage mit **IP-Übertragungseinheit**, die mit der App
-  *MB-Remote Control V2* funktioniert (getestet: DS7700 bzw. „DS7500 IP“, siehe
-  [Kompatibilität](../README.md#compatible-systems)).
-- Die Übertragungseinheit muss im Heimnetz erreichbar sein, standardmäßig auf **Port 8016**.
-- **Entweder** Home Assistant OS bzw. Supervised (für das Add-on) **oder** irgendeinen
-  Docker-Host im selben Netz (Proxmox-LXC, Synology, Raspberry Pi, NAS …).
-- Für Sensoren und Taster in Home Assistant zusätzlich das Add-on **Mosquitto broker**.
+- An intrusion alarm panel with an **IP transmitter** that works with the *MB-Remote Control V2*
+  app (tested: DS7700, which reports as "DS7500 IP"; see
+  [compatibility](../README.md#compatible-systems)).
+- The transmitter must be reachable on your home network, by default on **port 8016**.
+- **Either** Home Assistant OS or Supervised (for the add-on) **or** any Docker host on the same
+  network (Proxmox LXC, Synology, Raspberry Pi, NAS …).
+- For sensors and buttons in Home Assistant, also the **Mosquitto broker** add-on.
 
-## 2. Daten der Anlage herausfinden
+## 2. Find your panel's details
 
-Am einfachsten schaust du in der Original-App unter **Anlagenauswahl** nach. Du brauchst:
+The easiest place to look is the original app under **Anlagenauswahl** (system selection). You
+need:
 
-| Angabe | Beispiel | Hinweis |
+| Detail | Example | Note |
 |---|---|---|
-| Adresse | `192.168.178.99` | IP der Übertragungseinheit im Heimnetz. Am besten in der Fritz!Box (bzw. im Router) eine feste IP vergeben. |
-| Port | `8016` | Standard. |
-| Benutzergruppe | `1` | Dieselbe Nummer wie in der Original-App. |
-| AES-Schlüssel | *(meist leer)* | Nur wenn in der Original-App einer eingetragen ist: 32, 48 oder 64 Hex-Zeichen. |
+| Address | `192.168.178.99` | IP of the transmitter on your network. Best give it a fixed IP in your router. |
+| Port | `8016` | The default. |
+| User group | `1` | The same number as in the original app. |
+| AES key | *(usually empty)* | Only if the original app has one entered: 32, 48 or 64 hex characters. |
 
-Kurzer Test im Browser (nur lesen, drückt nichts):
+Quick test in a browser (read-only, presses nothing):
 `http://192.168.178.99:8016/ui_init.xml?B-GR=1&S-ID=00&CNT=FFFF`
-Kommt eine XML-Antwort mit `<Session_ID>`, ist die Anlage erreichbar. Mit AES-Schlüssel kommt
-stattdessen `<crypt>…</crypt>`, auch das ist in Ordnung.
+If you get an XML answer with `<Session_ID>`, the panel is reachable. With an AES key you get
+`<crypt>…</crypt>` instead, which is fine too.
 
-## 3. Weg A: Home-Assistant-Add-on
+## 3. Option A: Home Assistant add-on
 
-### 3.1 Repository hinzufügen
+### 3.1 Add the repository
 
-1. In Home Assistant **Einstellungen → Add-ons → Add-on Store** öffnen.
-2. Oben rechts **⋮ → Repositories**.
-3. `https://github.com/PXLJAKE/ema-webpanel` eintragen und **Hinzufügen**.
-4. Fenster schließen. Im Store taucht unten **Alarm Keypad (EMA)** auf (sonst einmal
-   **⋮ → Nach Updates suchen**).
+1. In Home Assistant open **Settings → Add-ons → Add-on store**.
+2. Top right **⋮ → Repositories**.
+3. Enter `https://github.com/PXLJAKE/ema-webpanel` and click **Add**.
+4. Close the dialog. **Alarm Keypad (EMA)** appears at the bottom of the store (if not, use
+   **⋮ → Check for updates** once).
 
-### 3.2 Installieren und konfigurieren
+### 3.2 Install and configure
 
-1. **Alarm Keypad (EMA)** öffnen und **Installieren**. Das Add-on wird auf deinem
-   Home Assistant gebaut, das dauert ein paar Minuten.
-2. Reiter **Konfiguration**:
+1. Open **Alarm Keypad (EMA)** and click **Install**. The add-on is built on your Home
+   Assistant, which takes a few minutes.
+2. **Configuration** tab:
 
-   | Option | Was eintragen |
+   | Option | What to enter |
    |---|---|
-   | Adresse der Anlage | IP der Übertragungseinheit, z. B. `192.168.178.99` |
-   | Port der Anlage | `8016` |
-   | Benutzergruppe | wie in der Original-App, meist `1` |
-   | Steuern erlauben | **aus** lassen |
-   | Abfrage-Intervall (ms) | `1000` |
-   | Entitäten in Home Assistant (MQTT) | erst einmal aus, siehe [Abschnitt 7](#7-sensoren-und-taster-in-home-assistant-mqtt) |
-   | Taster in Home Assistant | aus |
+   | Panel address | IP of the transmitter, e.g. `192.168.178.99` |
+   | Panel port | `8016` |
+   | User group | as in the original app, usually `1` |
+   | Allow control | leave **off** |
+   | Refresh interval (ms) | `1000` |
+   | Home Assistant entities (MQTT) | off for now, see [section 7](#7-sensors-and-buttons-in-home-assistant-mqtt) |
+   | Function buttons in Home Assistant | off |
+   | Language | `auto` (follows Home Assistant), or a fixed `en` or `de` |
 
-   Adresse, Port und Gruppe werden nur **beim allerersten Start** als erste Anlage übernommen.
-   Danach verwaltest du die Anlagen in der App (Abschnitt 5).
-3. Reiter **Info**: **Starten**, und **In Seitenleiste anzeigen** einschalten.
-4. In der Seitenleiste erscheint **Alarmanlage**. Ein Klick öffnet die App.
+   Address, port and group are only used **on the very first start** to create the first
+   system. After that you manage systems in the app (section 5).
+3. **Info** tab: **Start**, and switch on **Show in sidebar**.
+4. **Alarm Keypad** appears in the sidebar. Click it to open the app.
 
-In Home Assistant meldet dich Home Assistant selbst an. Ein eigenes Passwort ist nicht nötig, das
-Add-on hat auch keinen offenen Port nach außen.
+Inside Home Assistant, Home Assistant signs you in. No separate password is needed, and the
+add-on has no port open to the outside.
 
-## 4. Weg B: Docker (ohne Home Assistant)
+## 4. Option B: Docker (without Home Assistant)
 
-### 4.1 Starten
+### 4.1 Start
 
 ```bash
 docker run -d --name alarm-keypad --restart unless-stopped \
   -p 8099:8099 -v ema-data:/data ghcr.io/pxljake/ema-webpanel:latest
 ```
 
-oder mit [`docker-compose.yml`](../docker-compose.yml) aus dem Repository: `docker compose up -d`.
+or with [`docker-compose.yml`](../docker-compose.yml) from the repository: `docker compose up -d`.
 
-- **Synology** (Container Manager): *Projekt → Erstellen*, Compose-Datei einfügen, Port 8099
-  und einen Ordner für `/data` zuordnen.
-- **Proxmox**: in einem LXC oder einer VM mit Docker, gleicher Befehl.
-- Der Container muss die Anlage im Heimnetz erreichen. Normales Bridge-Netzwerk reicht.
+- **Synology** (Container Manager): *Project → Create*, paste the compose file, map port 8099
+  and a folder to `/data`.
+- **Proxmox**: in an LXC or a VM with Docker, same command.
+- The container must reach the panel on your network. Normal bridge networking is enough.
 
-### 4.2 Erster Start im Browser
+### 4.2 First start in the browser
 
-1. `http://<docker-host>:8099` öffnen.
-2. Der Einrichtungs-Assistent fragt nach einem **Passwort**. Empfohlen, sobald die Seite mehr
-   als ein Gerät im Heimnetz erreicht. Du kannst es auch später unter ⚙ festlegen.
-3. Danach legst du deine erste Anlage an (Abschnitt 5).
+1. Open `http://<docker-host>:8099`.
+2. The setup asks for a **password**. Recommended as soon as more than one device on your
+   network can reach the page. You can also set it later under ⚙.
+3. Then add your first system (section 5).
 
-Alles wird im Volume `/data` gespeichert (`systems.json`, `settings.json`). Passwort vergessen?
-`settings.json` löschen und den Container neu starten: Passwort weg, Steuern wieder aus, die
-Anlagen bleiben.
+Everything is stored in the `/data` volume (`systems.json`, `settings.json`). Forgot the
+password? Delete `settings.json` and restart the container: the password is gone, control is
+off again, your systems are kept.
 
-### 4.3 Zugriff von unterwegs
+### 4.3 Access on the go
 
-Gib Port 8099 **nicht** am Router frei. Nimm einen **Cloudflare Tunnel** (in der Compose-Datei
-vorbereitet) und schalte **Cloudflare Access** davor (Login per E-Mail-Code). Das Passwort in
-der App ist dann die zweite Sicherung. Alternativ ein VPN (WireGuard, Tailscale, Fritz!Box-VPN).
+Do **not** forward port 8099 on your router. Use a **Cloudflare Tunnel** (prepared in the compose
+file) and put **Cloudflare Access** in front of it (sign-in with an email code). The password in
+the app is then a second layer. A VPN (WireGuard, Tailscale, router VPN) works too.
 
-## 5. Anlagen anlegen und verbinden
+## 5. Add systems and connect
 
-Reiter **Anlagen** (links unten am Handy, links in der Leiste am PC) → **＋ Anlage hinzufügen**.
+**Systems** tab (bottom left on a phone, in the side rail on a computer) → **＋ Add system**.
 
-<p align="center"><img src="screenshots/phone-system-dialog-light.png" width="260" alt="Dialog Anlage hinzufügen"></p>
+<p align="center"><img src="screenshots/phone-system-dialog-light.png" width="260" alt="Add system dialog"></p>
 
-| Feld | Bedeutung |
+| Field | Meaning |
 |---|---|
-| Name | frei wählbar, z. B. „Zuhause“ |
-| Adresse | IP oder Hostname, von außen z. B. `name.myfritz.net` |
-| Port | meist `8016` |
-| Gruppe | Benutzergruppe für das Bedienteil, wie in der Original-App |
-| AES-Schlüssel | nur wenn die Anlage einen hat, sonst leer. Beim Bearbeiten: leer = gespeicherten behalten, `-` = Schlüssel löschen. Der Schlüssel wird nie an den Browser zurückgeschickt. |
-| Gruppe für HA | Benutzergruppe der Home-Assistant-Anbindung (Abschnitt 7). „wie oben“ = dieselbe Gruppe. |
+| Name | anything you like, e.g. "Home" |
+| Address | IP or host name, from outside e.g. `name.myfritz.net` |
+| Port | usually `8016` |
+| Group | user group for the keypad, as in the original app |
+| AES key | only if the panel has one, otherwise leave empty. When editing: empty = keep the saved key, `-` = remove it. The key is never sent back to the browser. |
+| Group for HA | user group for the Home Assistant entities (section 7). "same as above" = the same group. |
 
-Dann die Anlage antippen und **Verbinden**. Oben steht **live** mit einem Countdown.
+Then tap the system and **Connect**. The header shows **live** with a countdown.
 
-Wichtig zum Verständnis: Die Anlage lässt immer **nur einen** Nutzer gleichzeitig ans
-Bedienteil. Deshalb verbindet sich die App nur auf Wunsch und trennt nach **5 Minuten ohne
-Bedienung** oder mit **Trennen** wieder. Ist gerade jemand anderes am Bedienteil (Original-App,
-zweites Gerät), zeigt das LCD „gesperrt“. Taster und LEDs gehen trotzdem.
+Good to know: the panel only ever lets **one** user use the keypad at a time. That is why the
+app only connects when you ask it to, and disconnects after **5 minutes without use** or when
+you tap **Disconnect**. If someone else is on the keypad right now (original app, second
+device), the LCD shows that it is locked. Buttons and LEDs keep working.
 
-Mehrere Anlagen lassen sich unter **Bearbeiten** sortieren und löschen. Die **erste Anlage in
-der Liste** ist die, die an Home Assistant gemeldet wird.
+Under **Edit** you can reorder and delete systems. The **first system in the list** is the one
+reported to Home Assistant.
 
-## 6. Steuern einschalten
+## 6. Switch on control
 
-Erst wenn LCD, Lampen und Taster stimmen:
+Only once the LCD, lamps and buttons look right:
 
-- Add-on: in der App **⚙ → Steuern erlauben** (oder die Add-on-Option, gilt ab dem nächsten Start).
-- Docker: **⚙ → Steuern erlauben**. Ist ein Passwort gesetzt, wird es dafür noch einmal abgefragt.
+- Add-on: in the app **⚙ → Allow control** (or the add-on option, applied on the next start).
+- Docker: **⚙ → Allow control**. If a password is set, it is asked for again.
 
-Ab dann senden Ziffern und Pfeile sofort, **EIN**, **AUS** und jeder Taster fragen vorher nach.
-Es gibt bewusst **keine** Panik-, Überfall- oder Notruftaste. Feuer, Wasser und Heizung sind
-reine Anzeigen. Jeder gesendete Befehl steht im Log des Add-ons bzw. Containers.
+From then on digits and arrows are sent immediately; **Arm**, **Disarm** and every function
+button ask first. There is deliberately **no** panic, hold-up or emergency key. Fire, water and
+heating are display-only. Every command sent is listed in the log of the add-on or container.
 
-## 7. Sensoren und Taster in Home Assistant (MQTT)
+## 7. Sensors and buttons in Home Assistant (MQTT)
 
-Damit bekommst du die Lampen und Taster der Anlage als Entitäten, für Dashboards und
-Automationen, z. B. eine Einbruch-Benachrichtigung.
+This gives you the panel's lamps and buttons as entities, for dashboards and automations such
+as an intrusion alert.
 
-### 7.1 Wie das funktioniert
+### 7.1 How it works
 
-Das Add-on hält dafür eine **eigene, dauerhafte Verbindung**, die **nur die Taster- und
-LED-Seite** liest. Das ist an einer echten Anlage geprüft: Diese Verbindung belegt das
-Bedienteil **nicht**, es bleibt für dich, die Original-App und das echte Bedienteil frei.
+The add-on keeps a **separate, permanent connection** for this that **only reads the button and
+LED page**. This was checked on a real panel: the connection does **not** take the keypad, so it
+stays free for you, the original app and the real keypad.
 
-### 7.2 Eigene Benutzergruppe (empfohlen)
+### 7.2 A user group of its own (recommended)
 
-Am saubersten bekommt die HA-Verbindung eine **eigene Benutzergruppe** in der Anlage, der nur
-**Taster und LEDs** freigegeben sind, ohne Bedienteil. Dann kann Home Assistant das Bedienteil
-schon von der Anlage aus nicht bedienen, und du legst dort auch fest, welche Taster HA schalten
-darf. Wie man Gruppen einrichtet, hängt von deiner Anlage ab (Errichter-Programmierung der
-Übertragungseinheit).
+Ideally the HA connection gets **its own user group** in the panel that is only allowed
+**buttons and LEDs**, without the keypad. Then Home Assistant cannot operate the keypad, enforced
+by the panel itself, and you decide there which buttons HA may press. How to set up groups
+depends on your panel (installer programming of the transmitter).
 
-Beispiel: Hauptgruppe `3` für das Bedienteil, Gruppe `2` nur mit Tastern für HA. Dann bei der
-Anlage **Gruppe = 3** und **Gruppe für HA = 2** eintragen. Ohne eigene Gruppe funktioniert es mit
-„wie oben“ genauso, nur ohne diese zweite Sicherung.
+Example: main group `3` for the keypad, group `2` with only buttons for HA. Then enter
+**Group = 3** and **Group for HA = 2** for the system. Without a group of its own it works the
+same with "same as above", just without this second safeguard.
 
-### 7.3 Einschalten
+### 7.3 Switch it on
 
-1. Add-on **Mosquitto broker** installieren und starten, falls noch nicht vorhanden (unter
-   *Einstellungen → Geräte & Dienste* sollte die Integration **MQTT** auftauchen). Benutzer und
-   Passwort holt sich das Add-on automatisch.
-2. Im Add-on **Alarm Keypad (EMA)** → **Konfiguration**: **Entitäten in Home Assistant (MQTT)**
-   einschalten, speichern, Add-on **neu starten**.
-3. Unter *Einstellungen → Geräte & Dienste → MQTT* erscheint ein Gerät mit dem Namen deiner
-   Anlage.
+1. Install and start the **Mosquitto broker** add-on if you do not have it yet (the **MQTT**
+   integration should show up under *Settings → Devices & services*). The add-on fetches user
+   and password automatically.
+2. In the **Alarm Keypad (EMA)** add-on → **Configuration**: switch on **Home Assistant
+   entities (MQTT)**, save and **restart** the add-on.
+3. A device named after your system appears under *Settings → Devices & services → MQTT*.
 
-Docker ohne Home Assistant, aber mit eigenem Broker: `-e MQTT_ENTITIES=1 -e MQTT_HOST=… -e
-MQTT_PORT=1883 -e MQTT_USER=… -e MQTT_PASSWORD=…` (optional `-e MQTT_BUTTONS=1`).
+Docker without Home Assistant but with your own broker: `-e MQTT_ENTITIES=1 -e MQTT_HOST=…
+-e MQTT_PORT=1883 -e MQTT_USER=… -e MQTT_PASSWORD=…` (optionally `-e MQTT_BUTTONS=1`).
 
-### 7.4 Was es gibt
+### 7.4 What you get
 
-| Entität | Art | Wann verfügbar |
+| Entity | Type | When available |
 |---|---|---|
-| Die 8 LEDs der LED-Seite (z. B. „Einbruch Haus“) | Binärsensor | immer |
-| Status der 8 Taster (z. B. „Weihnachtsbel. Status“) | Binärsensor | immer |
-| Feuer, Wasseralarm, Heizung Störung | Binärsensor | immer |
-| Verbindung zur Anlage | Binärsensor (Diagnose) | immer |
-| Status Betrieb, Einbruch, Sabotage, Überfall, Störungen … | Binärsensor | nur solange das Bedienteil in der App offen ist |
-| Die Taster selbst | Schaltfläche | nur wenn **Steuern erlauben** **und** **Taster in Home Assistant** an sind |
+| The 8 LEDs of the LED page (e.g. "Einbruch Haus") | binary sensor | always |
+| State of the 8 function buttons (e.g. "Weihnachtsbel. Status") | binary sensor | always |
+| The three indicators (fire, water alarm, heating fault) | binary sensor | always |
+| Panel connection | binary sensor (diagnostic) | always |
+| Status Operation, Intrusion, Tamper, Hold-up, faults … | binary sensor | only while the keypad is open in the app |
+| The function buttons themselves | button | only while **Allow control** **and** **Function buttons in Home Assistant** are on |
 
-Blinken zählt als „an“. Jede Lampe hat die Attribute `color` und `blink`. Die Namen kommen aus
-der Anlage, leere Plätze werden weggelassen.
+The fixed names (connection, status …) follow the add-on's language; the names of lamps and
+buttons always come from the panel, and empty slots are left out. Blinking counts as on. Every
+lamp has the attributes `color` and `blink`.
 
-Die Statuslampen des Bedienteils (Betrieb, Einbruch usw.) liefert die Anlage nur über die
-Bedienteil-Seite. Sie dauerhaft abzufragen würde das Bedienteil sperren, deshalb sind sie nur
-aktuell, solange du es in der App offen hast. Für Alarm-Automationen nimm die LEDs der LED-Seite
-(z. B. „Einbruch Haus“), die sind immer da.
+The panel only reports the keypad's status lamps (operation, intrusion and so on) on the keypad
+page. Reading it permanently would lock the keypad, so they are only current while you have the
+keypad open in the app. For alarm automations use the LEDs of the LED page (e.g. "Einbruch
+Haus"), which are always there.
 
-### 7.5 Taster aus Home Assistant schalten
+### 7.5 Press buttons from Home Assistant
 
-1. In der App **Steuern erlauben** einschalten.
-2. Add-on-Option **Taster in Home Assistant** einschalten und neu starten.
+1. Switch on **Allow control** in the app.
+2. Switch on the add-on option **Function buttons in Home Assistant** and restart.
 
-Die Schaltflächen erscheinen dann am Gerät. Schaltest du Steuern wieder aus, verschwinden sie
-aus Home Assistant, und Drücke von HA werden ignoriert. Achtung: Schaltflächen in Home Assistant
-fragen **nicht** nach. Überleg dir, welche Automationen sie drücken dürfen.
+The buttons then appear on the device. If you switch control off again, they disappear from Home
+Assistant and presses from HA are ignored. Careful: buttons in Home Assistant do **not** ask for
+confirmation. Think about which automations may press them.
 
-### 7.6 Beispiel: Einbruch-Benachrichtigung
+### 7.6 Example: intrusion alert
 
-Die Entity-ID findest du am Gerät (z. B. `binary_sensor.zuhause_einbruch_haus`).
+You find the entity ID on the device (e.g. `binary_sensor.home_einbruch_haus`).
 
 ```yaml
-alias: Einbruch melden
+alias: Intrusion alert
 triggers:
   - trigger: state
-    entity_id: binary_sensor.zuhause_einbruch_haus
+    entity_id: binary_sensor.home_einbruch_haus
     to: "on"
 actions:
-  - action: notify.mobile_app_dein_handy
+  - action: notify.mobile_app_your_phone
     data:
-      title: "Alarmanlage"
-      message: "Einbruch Haus ausgelöst!"
+      title: "Alarm system"
+      message: "Intrusion detected (house)!"
       data:
         push:
           interruption-level: critical
 mode: single
 ```
 
-Und eine einfache Dashboard-Karte:
+And a simple dashboard card:
 
 ```yaml
 type: entities
-title: Alarmanlage
+title: Alarm system
 entities:
-  - binary_sensor.zuhause_verbindung_zur_anlage
-  - binary_sensor.zuhause_einbruch_haus
-  - binary_sensor.zuhause_feuer
-  - binary_sensor.zuhause_wasseralarm
+  - binary_sensor.home_panel_connection
+  - binary_sensor.home_einbruch_haus
+  - binary_sensor.home_feuer
+  - binary_sensor.home_wasseralarm
 ```
 
-## 8. Als App installieren
+## 8. Install as an app
 
-Die Seite lässt sich wie eine App installieren, sobald sie über **HTTPS** erreichbar ist (z. B.
-über den Cloudflare Tunnel): am Handy **Teilen → Zum Home-Bildschirm** (iPhone) bzw. **⋮ → App
-installieren** (Android, Chrome), am PC über das Installieren-Symbol in der Adressleiste. In Home
-Assistant nutzt du einfach die HA-App, dort ist das Bedienteil in der Seitenleiste.
+The page can be installed like an app once it is served over **HTTPS** (e.g. through the
+Cloudflare Tunnel): on a phone **Share → Add to Home Screen** (iPhone) or **⋮ → Install app**
+(Android, Chrome), on a computer with the install icon in the address bar. In Home Assistant
+just use the HA app, the keypad is in its sidebar.
 
-## 9. Aktualisieren
+## 9. Updating
 
-- **Add-on**: Home Assistant zeigt Updates unter *Einstellungen → Add-ons*. Falls nicht: im Store
-  **⋮ → Nach Updates suchen**. Das Add-on wird lokal gebaut (ein paar Minuten).
-- **Docker**: `docker pull ghcr.io/pxljake/ema-webpanel:latest` und Container neu erstellen
+- **Add-on**: Home Assistant shows updates under *Settings → Add-ons*. If not: in the store
+  **⋮ → Check for updates**. The add-on is built locally (a few minutes).
+- **Docker**: `docker pull ghcr.io/pxljake/ema-webpanel:latest` and recreate the container
   (`docker compose pull && docker compose up -d`).
 
-Deine Anlagen und Einstellungen bleiben in beiden Fällen erhalten.
+Your systems and settings are kept either way.
 
-## 10. Fehlerbehebung
+## 10. Language
 
-| Problem | Lösung |
+The app speaks English and German.
+
+- **Add-on**: option **Language**. `auto` (default) follows Home Assistant: your HA profile
+  language in the app, the HA system language for the entity names. Anything other than German
+  becomes English. `en` or `de` fixes it. Applied on the next add-on start.
+- **Docker**: the browser's language decides.
+- **Per device**: in the app under **⚙ → Language** (Automatic, English, Deutsch).
+
+Names that come from the panel (buttons, LEDs, LCD text) are shown as the panel sends them.
+
+## 11. Troubleshooting
+
+| Problem | Fix |
 |---|---|
-| „nicht verbunden“ | Adresse, Port und Gruppe prüfen. Unter **⚙ → Verbindung testen** siehst du die rohe Antwort der Anlage. Ist der Browser-Test aus Abschnitt 2 erfolgreich? |
-| LCD zeigt „gesperrt“ | Jemand anderes ist am Bedienteil (Original-App, zweites Gerät). Dort trennen oder warten. Taster und LEDs gehen trotzdem. |
-| „Die Anlage antwortet verschlüsselt“ | Die Anlage hat einen AES-Schlüssel: bei der Anlage eintragen. |
-| „Entschlüsseln fehlgeschlagen“ | AES-Schlüssel falsch. Neu eintragen. |
-| HA-Entitäten fehlen | Läuft Mosquitto? Option **Entitäten in Home Assistant** an und Add-on neu gestartet? Im Add-on-Log steht „MQTT verbunden“ und „Hintergrund-Sitzung gestartet“. |
-| HA-Entitäten „nicht verfügbar“ | Die Hintergrund-Verbindung erreicht die Anlage nicht, oder die HA-Gruppe hat keine Rechte. Log prüfen. |
-| Statuslampen in HA „nicht verfügbar“ | Normal, solange das Bedienteil in der App nicht offen ist (Abschnitt 7.4). |
-| Keine Taster-Schaltflächen in HA | **Steuern erlauben** und **Taster in Home Assistant** müssen beide an sein. |
-| Anlage nimmt keine Verbindung an | Sie erlaubt nur wenige Sitzungen gleichzeitig. Andere Apps schließen, kurz warten. |
-| Beim Update „exit code 137“ im Log | Harmlos: der alte Container wurde beim Update hart beendet. |
-| Umlaute im LCD falsch | **⚙ → Verbindung testen** öffnen und die Rohdaten in einem Issue melden. |
+| "not connected" | Check address, port and group. **⚙ → Test connection to the panel** shows the raw answer of the panel. Does the browser test from section 2 work? |
+| LCD says the keypad is locked | Someone else is on the keypad (original app, second device). Disconnect there or wait. Buttons and LEDs keep working. |
+| "The panel answers encrypted" | The panel uses an AES key: enter it for the system. |
+| "Decryption failed" | Wrong AES key. Enter it again. |
+| HA entities missing | Is Mosquitto running? Is the option **Home Assistant entities** on and was the add-on restarted? The add-on log shows "MQTT connected" and "Background session started". |
+| HA entities "unavailable" | The background connection cannot reach the panel, or the HA group has no rights. Check the log. |
+| Status lamps in HA "unavailable" | Normal while the keypad is not open in the app (section 7.4). |
+| No function buttons in HA | **Allow control** and **Function buttons in Home Assistant** both have to be on. |
+| Panel does not accept a connection | It only allows a few sessions at a time. Close other apps and wait a moment. |
+| "exit code 137" in the log during an update | Harmless: the old container was stopped hard during the update. |
+| Umlauts on the LCD look wrong | Open **⚙ → Test connection to the panel** and report the raw data in an issue. |

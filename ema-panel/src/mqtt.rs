@@ -118,14 +118,15 @@ pub struct Disc {
 
 /// Everything Home Assistant needs to know about one system. Unused (empty) slots and
 /// disabled buttons get an empty payload so an entity from an earlier start disappears.
-pub fn discovery(sys: &System, info: &InitInfo, buttons_enabled: bool) -> Vec<Disc> {
+pub fn discovery(sys: &System, info: &InitInfo, buttons_enabled: bool, lang: &str) -> Vec<Disc> {
+    let de = lang == "de";
     let tid = topic_id(&sys.id);
     let node = format!("{BASE}_{tid}");
     let device = json!({
         "identifiers": [node],
         "name": sys.name,
-        "manufacturer": "ema-webpanel (inoffiziell)",
-        "model": "Alarmanlage über IP",
+        "manufacturer": if de { "ema-webpanel (inoffiziell)" } else { "ema-webpanel (unofficial)" },
+        "model": if de { "Alarmanlage über IP" } else { "Alarm panel over IP" },
         "sw_version": VERSION,
     });
     let avail =
@@ -142,7 +143,7 @@ pub fn discovery(sys: &System, info: &InitInfo, buttons_enabled: bool) -> Vec<Di
         "binary_sensor",
         "connection".into(),
         Some(json!({
-            "name": "Verbindung zur Anlage",
+            "name": if de { "Verbindung zur Anlage" } else { "Panel connection" },
             "unique_id": format!("{node}_connection"),
             "state_topic": format!("{BASE}/{tid}/panel"),
             "payload_on": "online",
@@ -233,7 +234,10 @@ pub fn discovery(sys: &System, info: &InitInfo, buttons_enabled: bool) -> Vec<Di
     for tag in STATUS_TAGS {
         let lower = tag.to_ascii_lowercase();
         let cfg = json!({
-            "name": format!("Status {}", panel::led_label(tag)),
+            "name": format!(
+                "Status {}",
+                if de { panel::led_label(tag) } else { panel::led_label_en(tag) }
+            ),
             "unique_id": format!("{node}_status_{lower}"),
             "state_topic": format!("{BASE}/{tid}/status/{lower}"),
             "json_attributes_topic": format!("{BASE}/{tid}/status/{lower}/attr"),
@@ -320,14 +324,14 @@ async fn publish(c: &AsyncClient, topic: &str, payload: &str, retain: bool) {
 pub async fn run(shared: Arc<Shared>) {
     let o = shared.opts.clone();
     if !o.mqtt_entities {
-        println!("Home-Assistant-Entitäten (MQTT) sind aus (Option mqtt_entities).");
+        println!("Home Assistant entities (MQTT) are off (option mqtt_entities).");
         return;
     }
     let broker = loop {
         match find_broker().await {
             Ok(b) => break b,
             Err(e) => {
-                eprintln!("MQTT: {e}; neuer Versuch in 60 s");
+                eprintln!("MQTT: {e}; retrying in 60 s");
                 tokio::time::sleep(Duration::from_secs(60)).await;
             }
         }
@@ -358,7 +362,7 @@ pub async fn run(shared: Arc<Shared>) {
             loop {
                 match events.poll().await {
                     Ok(Event::Incoming(Packet::ConnAck(_))) => {
-                        println!("MQTT verbunden");
+                        println!("MQTT connected");
                         announce.store(true, Ordering::Relaxed);
                     }
                     Ok(Event::Incoming(Packet::Publish(p))) => {
@@ -366,7 +370,7 @@ pub async fn run(shared: Arc<Shared>) {
                     }
                     Ok(_) => {}
                     Err(e) => {
-                        eprintln!("MQTT: {e}; neuer Versuch in 10 s");
+                        eprintln!("MQTT: {e}; retrying in 10 s");
                         tokio::time::sleep(Duration::from_secs(10)).await;
                     }
                 }
@@ -404,7 +408,7 @@ pub async fn run(shared: Arc<Shared>) {
                 .await;
             }
             println!(
-                "Hintergrund-Sitzung für HA: {} ({}:{}, Gruppe {group}, nur Taster/LEDs)",
+                "Background session for HA: {} ({}:{}, group {group}, buttons/LEDs only)",
                 sys.name, sys.host, sys.port
             );
             panel = Panel::with_key(&sys.host, sys.port, &group, &sys.key);
@@ -416,14 +420,14 @@ pub async fn run(shared: Arc<Shared>) {
         if info.is_none() {
             match panel.init().await {
                 Ok((i, _)) => {
-                    println!("Hintergrund-Sitzung gestartet (Gruppe {group})");
+                    println!("Background session started (group {group})");
                     info = Some(i);
                     errors = 0;
                     backoff = 5;
                     announce.store(true, Ordering::Relaxed);
                 }
                 Err(e) => {
-                    eprintln!("Hintergrund-Sitzung: {e}; neuer Versuch in {backoff} s");
+                    eprintln!("Background session: {e}; retrying in {backoff} s");
                     publish(&client, &format!("{BASE}/{tid}/panel"), "offline", true).await;
                     tokio::time::sleep(Duration::from_secs(backoff)).await;
                     backoff = (backoff * 2).min(120);
@@ -439,7 +443,7 @@ pub async fn run(shared: Arc<Shared>) {
             announce.store(true, Ordering::Relaxed);
         }
         if announce.swap(false, Ordering::Relaxed) {
-            for d in discovery(&sys, &i, buttons_on) {
+            for d in discovery(&sys, &i, buttons_on, shared.lang) {
                 publish(&client, &d.topic, &d.payload, true).await;
             }
             if let Err(e) = client
@@ -459,7 +463,7 @@ pub async fn run(shared: Arc<Shared>) {
                 continue;
             };
             if !(shared.settings.control() && o.mqtt_buttons) {
-                println!("HA-Taster {n} ignoriert: Steuern oder mqtt_buttons ist aus");
+                println!("HA button {n} ignored: control or mqtt_buttons is off");
                 continue;
             }
             if let Some(code) = panel::taster_code(n) {
@@ -507,7 +511,7 @@ pub async fn run(shared: Arc<Shared>) {
             }
             Err(e) => {
                 errors += 1;
-                eprintln!("Hintergrund-Sitzung Fehler ({errors}): {e}");
+                eprintln!("Background session error ({errors}): {e}");
                 if errors >= 3 {
                     info = None;
                     errors = 0;
@@ -569,12 +573,12 @@ mod tests {
 
     #[test]
     fn buttons_only_when_enabled() {
-        let off = discovery(&sys(), &info(), false);
+        let off = discovery(&sys(), &info(), false, "de");
         assert!(off
             .iter()
             .filter(|d| d.topic.contains("/button/"))
             .all(|d| d.payload.is_empty()));
-        let on = discovery(&sys(), &info(), true);
+        let on = discovery(&sys(), &info(), true, "de");
         let b1 = on
             .iter()
             .find(|d| d.topic == "homeassistant/button/ema_panel_default/taster1/config")
@@ -599,7 +603,7 @@ mod tests {
 
     #[test]
     fn empty_names_remove_entities() {
-        let d = discovery(&sys(), &info(), false);
+        let d = discovery(&sys(), &info(), false, "de");
         let led1 = d
             .iter()
             .find(|d| d.topic.ends_with("/led1/config"))
@@ -653,5 +657,22 @@ mod tests {
             None
         );
         assert_eq!(topic_id("Ab-1"), "ab_1");
+    }
+
+    #[test]
+    fn entity_names_follow_language() {
+        let names = |lang: &str| -> Vec<String> {
+            discovery(&sys(), &info(), false, lang)
+                .iter()
+                .filter_map(|d| serde_json::from_str::<Value>(&d.payload).ok())
+                .filter_map(|v| v["name"].as_str().map(String::from))
+                .collect()
+        };
+        let en = names("en");
+        assert!(en.contains(&"Panel connection".to_string()));
+        assert!(en.contains(&"Status Intrusion".to_string()));
+        let de = names("de");
+        assert!(de.contains(&"Verbindung zur Anlage".to_string()));
+        assert!(de.contains(&"Status Einbruch".to_string()));
     }
 }
