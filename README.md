@@ -15,6 +15,7 @@ desktop, and has a light and a dark theme. Nothing leaves your network.
 - Virtual keypad (digits, ▲▼, EIN/AUS, function keys, Revision) and the panel's function buttons
 - **View-only by default.** Sending commands is an explicit add-on option (`control_enabled`)
 - Arm/disarm and function buttons always ask for confirmation first
+- **Several systems.** Add, edit, sort and delete systems in the app (name, address, port, group), including remote ones via a MyFRITZ/DynDNS name. One connection at a time
 - **Connects on demand.** The panel allows only one keypad user at a time, so the add-on connects when you tap *Verbinden*, disconnects after 5 minutes without activity or when you tap *Trennen*, leaving the panel free for other apps
 - Responsive layout: phone (bottom tabs) and tablet/desktop (side rail, wide keypad)
 - Small static Rust binary, no cloud, no account, no telemetry
@@ -34,7 +35,7 @@ local add-on.)
 
 | Option | Default | Meaning |
 |---|---|---|
-| `panel_host` | `192.168.178.99` | IP/hostname of the transmitter unit in your LAN |
+| `panel_host` | `192.168.178.99` | Address of the first system, used once on first start. More systems (also remote ones) are added in the app under *Anlagen* |
 | `panel_port` | `8016` | Port of the unit |
 | `user_group` | `1` | Same group number as in the original app's panel entry |
 | `control_enabled` | `false` | `false` = view only. `true` = keys/buttons send real commands |

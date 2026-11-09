@@ -1,7 +1,7 @@
 configuration:
   panel_host:
     name: Panel address
-    description: IP address or hostname of the transmitter unit on your local network (e.g. 192.168.178.99).
+    description: IP address or hostname of the transmitter unit on your local network (e.g. 192.168.178.99). Only used to create the first system on first start; add and edit systems in the app under "Anlagen".
   panel_port:
     name: Panel port
     description: Default is 8016.

@@ -65,6 +65,16 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .btn-ghost.discbtn{padding:7px 11px;font-size:12.5px;flex:none;color:var(--alarm);border-color:var(--alarm-soft)}
 @media (max-width:480px){.brand .txt{display:none}}
 .discbtn[hidden]{display:none}
+.fld{text-align:left;margin:0 0 12px}.fld label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin:0 0 4px}
+.fld input,.fld select{width:100%;font:inherit;font-size:16px;color:var(--text);background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+.fld.two{display:flex;gap:10px}.fld.two>div{flex:1}
+.formerr{color:var(--alarm);font-size:13px;text-align:left;min-height:18px;margin:0 0 8px}
+.modal p.hint{font-size:12px;margin:0 0 10px}
+.addsys{width:100%;margin:2px 0 14px;padding:12px;text-align:center}
+.badge.live{color:var(--ok);background:var(--ok-soft);border-color:transparent}
+.sys-card .edit{display:none;width:34px;height:34px;border-radius:9px;border:1px solid var(--border);background:var(--surface-2);place-items:center;font-size:15px;flex:none}
+#sysList.editing .sys-card .edit{display:grid}
+#sysList.editing .sys-card .openchev{display:none}
 .sysconn{display:flex;align-items:center;gap:12px;justify-content:space-between;margin:0 2px 14px;padding:13px 14px;border:1px solid var(--border);border-radius:14px;background:var(--surface)}
 .sysconn .t{font-size:13.5px;line-height:1.4;min-width:0}.sysconn .t small{display:block;color:var(--muted);font-size:12px}
 .sysconn .btn-primary{width:auto;padding:10px 18px;font-size:14px;flex:none}
@@ -297,9 +307,9 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     <!-- Anlagen -->
     <section id="view-systems" class="secpad" hidden>
       <div class="sechead"><div class="sectitle" style="margin:0">Deine Anlagen</div><button class="editlink" id="editSysLink">Bearbeiten</button></div>
-      <div class="sysconn" id="sysConn"><div class="t" id="sysConnTxt"></div><button class="btn-primary" id="sysConnBtn">Verbinden</button></div>
       <div id="sysList"></div>
-      <div class="hintbox">Die aktive Verbindung zur Anlage wird in den <b>Add-on-Einstellungen von Home Assistant</b> festgelegt (Host, Port, Gruppe). Diese Liste dient nur zur Übersicht.</div>
+      <button class="btn-ghost addsys" id="addSysBtn">＋ Anlage hinzufügen</button>
+      <div class="hintbox">Tippe eine Anlage an, um dich zu verbinden. Es ist immer nur eine Anlage gleichzeitig verbunden. Über „Bearbeiten“ kannst du Anlagen ändern, löschen und sortieren, auch Anlagen von außen (MyFRITZ-/DynDNS-Adresse und freigegebener Port).</div>
     </section>
 
     <!-- Bedienteil -->
@@ -360,6 +370,19 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
       <li><span class="b">🔌</span><div>Unter „Verbindung testen" siehst du die Rohdaten der Anlage.</div></li>
     </ul>
     <button class="btn-primary" id="introOk">Verstanden</button>
+  </div>
+</div>
+
+<!-- SYSTEM EDITOR -->
+<div class="modal-bg" id="sysBg">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="sysTitle">
+    <h2 id="sysTitle">Anlage hinzufügen</h2>
+    <div class="fld"><label for="fName">Name</label><input id="fName" maxlength="40" placeholder="z. B. Ferienhaus" autocomplete="off"></div>
+    <div class="fld"><label for="fHost">Adresse</label><input id="fHost" placeholder="192.168.178.99 oder name.myfritz.net" autocapitalize="off" autocomplete="off" spellcheck="false" inputmode="url"></div>
+    <div class="fld two"><div><label for="fPort">Port</label><input id="fPort" inputmode="numeric" value="8016"></div><div><label for="fGroup">Gruppe</label><select id="fGroup"><option>1</option><option>2</option><option>3</option><option>4</option></select></div></div>
+    <p class="hint">Von außen: MyFRITZ-/DynDNS-Name und den am Router freigegebenen Port eintragen. Die Anlage selbst hat keinen Passwortschutz, gib den Port nur gezielt frei.</p>
+    <div class="formerr" id="fErr"></div>
+    <div class="row2"><button class="btn-ghost" id="sysCancel">Abbrechen</button><button class="btn-primary" id="sysSave">Speichern</button></div>
   </div>
 </div>
 
@@ -461,24 +484,58 @@ function ledClass(st){ // on|off|blink -> css helper
 // ====================================================================
 //  Anlagen (local, informational — the live host is set in HA options)
 // ====================================================================
-const DEFAULT_SYSTEMS=[{id:'intern',name:'Meine Anlage',ad:'lokal'}];
-let systems=loadJSON('mb-systems',null);if(!Array.isArray(systems)||!systems.length)systems=DEFAULT_SYSTEMS.slice();
-function saveSystems(){store('mb-systems',JSON.stringify(systems));}
-let favId=load('mb-fav')||'';
-let editingSys=false;
+// ====================================================================
+//  Anlagen: the list lives in the add-on (/data), the UI only edits it
+// ====================================================================
+let systems=[],sysLoaded=false,activeSysId=null,lastSys=load('mb-last')||'',editingSys=false,editId='';
 const sysList=document.getElementById('sysList');
-function renderSystems(){sysList.innerHTML='';sysList.classList.toggle('editing',editingSys);systems.forEach(s=>{
-  const card=document.createElement('div');card.className='sys-card'+(s.id===favId?' active':'');
-  card.innerHTML='<span class="del" aria-label="Entfernen">✕</span>'+
-    '<button class="star '+(s.id===favId?'on':'')+'" title="Als Standard" aria-label="Als Standard">'+(s.id===favId?'★':'☆')+'</button>'+
-    '<div class="body"><div class="nm">'+esc(s.name)+(s.id===favId?' <span class="badge">Standard</span>':'')+'</div><div class="ad">'+esc(s.ad)+'</div></div>'+
-    '<span class="openchev">›</span>';
-  card.querySelector('.del').onclick=(e)=>{e.stopPropagation();const idx=Array.prototype.indexOf.call(sysList.children,card);if(idx<0)return;const nm=systems[idx].name;systems.splice(idx,1);saveSystems();renderSystems();toast('Entfernt: '+nm);};
-  card.querySelector('.star').onclick=(e)=>{e.stopPropagation();if(editingSys)return;favId=(favId===s.id?'':s.id);store('mb-fav',favId);renderSystems();toast(favId?('Standard: '+s.name):'Standard entfernt');};
-  sysList.appendChild(card);});}
+async function loadSystems(){try{const r=await fetch('api/systems',{cache:'no-store'});const d=await r.json();if(d&&d.ok){systems=d.systems||[];sysLoaded=true;renderSystems();maybeShowConnect();}}catch(e){}}
+function defSys(){return systems.find(x=>x.id===lastSys)||systems[0]||null;}
+function renderSystems(){
+  sysList.innerHTML='';sysList.classList.toggle('editing',editingSys);
+  if(sysLoaded&&!systems.length){sysList.innerHTML='<div class="empty"><b>Noch keine Anlage</b>Lege mit „Anlage hinzufügen" deine erste an.</div>';return;}
+  systems.forEach(sy=>{
+    const on=stActive&&sy.id===activeSysId;
+    const card=document.createElement('div');card.className='sys-card'+(on?' active':'');card.dataset.id=sy.id;
+    card.innerHTML='<span class="del" aria-label="Löschen">✕</span>'+
+      '<div class="body"><div class="nm">'+esc(sy.name)+(on?(stConnected?' <span class="badge live">Verbunden</span>':' <span class="badge">Verbinde …</span>'):'')+'</div><div class="ad">'+esc(sy.host+':'+sy.port)+' · Gruppe '+esc(sy.group)+'</div></div>'+
+      '<button class="edit" aria-label="Bearbeiten">✎</button><span class="openchev">›</span>';
+    card.querySelector('.del').onclick=async(e)=>{e.stopPropagation();if(!await showConfirm('Anlage „'+sy.name+'" löschen?'))return;
+      try{await postJSON('api/systems/delete',{id:sy.id});toast('Gelöscht: '+sy.name);await loadSystems();pollOnce();}catch(er){toast('Fehler: '+(er.message||er));}};
+    card.querySelector('.edit').onclick=(e)=>{e.stopPropagation();openSysEditor(sy);};
+    card.onclick=()=>{if(editingSys){openSysEditor(sy);return;}if(on){go('panel');return;}doConnect(sy.id).then(ok=>{if(ok)go('panel');});};
+    sysList.appendChild(card);});
+}
 let sysSortable=null;
-if(window.Sortable){sysSortable=Sortable.create(sysList,{disabled:true,animation:160,filter:'.del,.star,.openchev',preventOnFilter:false,chosenClass:'drag-chosen',ghostClass:'drag-ghost',onEnd:(e)=>{if(e.oldIndex==null||e.newIndex==null||e.oldIndex===e.newIndex)return;const it=systems.splice(e.oldIndex,1)[0];systems.splice(e.newIndex,0,it);saveSystems();}});}
+if(window.Sortable){sysSortable=Sortable.create(sysList,{disabled:true,animation:160,filter:'.del,.edit',preventOnFilter:false,chosenClass:'drag-chosen',ghostClass:'drag-ghost',onEnd:async(e)=>{if(e.oldIndex==null||e.newIndex==null||e.oldIndex===e.newIndex)return;const it=systems.splice(e.oldIndex,1)[0];systems.splice(e.newIndex,0,it);
+  try{await postJSON('api/systems/order',{ids:systems.map(x=>x.id)});}catch(er){toast('Sortieren fehlgeschlagen');loadSystems();}}});}
 document.getElementById('editSysLink').onclick=(e)=>{editingSys=!editingSys;e.currentTarget.textContent=editingSys?'Fertig':'Bearbeiten';renderSystems();if(sysSortable)sysSortable.option('disabled',!editingSys);};
+// add / edit dialog
+const sysBg=document.getElementById('sysBg');
+function openSysEditor(sy){
+  editId=sy?sy.id:'';
+  document.getElementById('sysTitle').textContent=sy?'Anlage bearbeiten':'Anlage hinzufügen';
+  document.getElementById('fName').value=sy?sy.name:'';
+  document.getElementById('fHost').value=sy?sy.host:'';
+  document.getElementById('fPort').value=sy?sy.port:8016;
+  document.getElementById('fGroup').value=sy?sy.group:'1';
+  document.getElementById('fErr').textContent='';
+  sysBg.classList.add('open');
+  setTimeout(()=>{try{document.getElementById('fName').focus();}catch(e){}},50);
+}
+document.getElementById('addSysBtn').onclick=()=>openSysEditor(null);
+document.getElementById('sysCancel').onclick=()=>sysBg.classList.remove('open');
+document.getElementById('sysSave').onclick=async()=>{
+  const err=document.getElementById('fErr');err.textContent='';
+  const portTxt=document.getElementById('fPort').value.trim();const port=portTxt?parseInt(portTxt,10):undefined;
+  if(portTxt&&!(port>0&&port<65536)){err.textContent='Port: 1 bis 65535.';return;}
+  try{
+    const d=await postJSON('api/systems',{id:editId||undefined,name:document.getElementById('fName').value,host:document.getElementById('fHost').value,port:port,group:document.getElementById('fGroup').value});
+    sysBg.classList.remove('open');toast(editId?'Gespeichert':'Anlage hinzugefügt');
+    if(!editId&&d.system&&systems.length===0)lastSys=d.system.id;
+    await loadSystems();pollOnce();
+  }catch(e){err.textContent=e.message||String(e);}
+};
 
 // ====================================================================
 //  Status pills (canonical alarm indicators) — driven by live LEDs
@@ -693,11 +750,13 @@ document.getElementById('connTestBtn').onclick=async()=>{
 const connEl=document.getElementById('conn'),connTxt=document.getElementById('connTxt');
 function setConn(state,label){connEl.className='conn'+(state?' '+state:'');connTxt.textContent=label;connEl.title=label;}
 // ---- connect on demand: the panel allows one keypad user at a time ----
-let stActive=false,stExpires=0,stConnected=false,stFetchErr=false,cnDismissed=false,wasActive=null,expiredNote=false;
+let lastSysKey='',stActive=false,stExpires=0,stConnected=false,stFetchErr=false,cnDismissed=false,wasActive=null,expiredNote=false;
 const connBg=document.getElementById('connBg');
-async function postJSON(url){const r=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:'{}',cache:'no-store'});let d={};try{d=await r.json();}catch(e){}if(!r.ok||!d.ok)throw new Error((d&&d.error)||('HTTP '+r.status));return d;}
-async function doConnect(){connBg.classList.remove('open');cnDismissed=false;try{await postJSON('api/connect');stActive=true;stExpires=Date.now()+300000;renderConn();pollOnce();}catch(e){toast('Verbinden fehlgeschlagen: '+(e.message||e));}}
-async function doDisconnect(){try{await postJSON('api/disconnect');stActive=false;stConnected=false;cnDismissed=true;renderConn();pollOnce();toast('Getrennt');}catch(e){toast('Trennen fehlgeschlagen: '+(e.message||e));}}
+async function postJSON(url,body){const r=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body||{}),cache:'no-store'});let d={};try{d=await r.json();}catch(e){}if(!r.ok||!d.ok)throw new Error((d&&d.error)||('HTTP '+r.status));return d;}
+async function doConnect(id){connBg.classList.remove('open');cnDismissed=false;const d=defSys();const sid=id||(d&&d.id)||'';
+  if(!sid){go('systems');openSysEditor(null);return false;}
+  try{await postJSON('api/connect',{id:sid});lastSys=sid;store('mb-last',sid);stActive=true;activeSysId=sid;stConnected=false;stExpires=Date.now()+300000;renderConn();pollOnce();return true;}catch(e){toast('Verbinden fehlgeschlagen: '+(e.message||e));return false;}}
+async function doDisconnect(){try{await postJSON('api/disconnect');stActive=false;stConnected=false;activeSysId=null;cnDismissed=true;renderConn();pollOnce();toast('Getrennt');}catch(e){toast('Trennen fehlgeschlagen: '+(e.message||e));}}
 function fmtLeft(ms){const t=Math.max(0,Math.ceil(ms/1000));return Math.floor(t/60)+':'+String(t%60).padStart(2,'0');}
 function renderConn(){
   const left=stExpires-Date.now();
@@ -706,20 +765,21 @@ function renderConn(){
   else if(stActive){setConn('','verbinde');}
   else{setConn('bad','getrennt');}
   document.getElementById('discBtn').hidden=!stActive;
-  const t=document.getElementById('sysConnTxt'),b=document.getElementById('sysConnBtn');
-  if(stActive){t.innerHTML='<b>'+(stConnected?'Verbunden':'Verbinde …')+'</b><small>Wird in '+fmtLeft(left)+' min getrennt, wenn nichts bedient wird.</small>';b.textContent='Trennen';b.className='btn-ghost';}
-  else{t.innerHTML='<b>Nicht verbunden</b><small>Die Anlage ist frei, z. B. für die Original-App.</small>';b.textContent='Verbinden';b.className='btn-primary';}
+  const key=(stActive?activeSysId:'')+'|'+stActive+'|'+stConnected;
+  if(key!==lastSysKey){lastSysKey=key;renderSystems();}
 }
 function maybeShowConnect(){
-  if(stFetchErr||stActive||cnDismissed||introBg.classList.contains('open')){return;}
-  document.getElementById('cnTitle').textContent=expiredNote?'Verbindung getrennt':'Mit der Anlage verbinden?';
+  if(stFetchErr||stActive||cnDismissed||!sysLoaded||introBg.classList.contains('open')||sysBg.classList.contains('open')){return;}
+  const dsys=defSys();
+  if(!dsys){document.getElementById('cnTitle').textContent='Noch keine Anlage';document.getElementById('cnMsg').textContent='Lege zuerst eine Anlage an: Name, Adresse (IP oder MyFRITZ-/DynDNS-Name), Port und Gruppe.';document.getElementById('cnYes').textContent='Anlage hinzufügen';connBg.classList.add('open');return;}
+  document.getElementById('cnYes').textContent='Verbinden';
+  document.getElementById('cnTitle').textContent=expiredNote?'Verbindung getrennt':('Mit '+dsys.name+' verbinden?');
   document.getElementById('cnMsg').innerHTML=(expiredNote?'Die Verbindung wurde nach 5&nbsp;Minuten ohne Bedienung getrennt, damit die Anlage für andere frei ist. ':'')+(expiredNote?'Neu verbinden?':'Am Bedienteil der Anlage kann immer nur ein Benutzer gleichzeitig angemeldet sein. Deshalb verbindet sich Alarm&nbsp;Keypad erst, wenn du es willst, und trennt nach 5&nbsp;Minuten ohne Bedienung automatisch.');
   connBg.classList.add('open');
 }
-document.getElementById('cnYes').onclick=doConnect;
+document.getElementById('cnYes').onclick=()=>{if(!systems.length){connBg.classList.remove('open');go('systems');openSysEditor(null);}else doConnect();};
 document.getElementById('cnLater').onclick=()=>{cnDismissed=true;expiredNote=false;connBg.classList.remove('open');};
 document.getElementById('discBtn').onclick=doDisconnect;
-document.getElementById('sysConnBtn').onclick=()=>{if(stActive)doDisconnect();else doConnect();};
 // tap on the status pill: extend while connected, ask to connect otherwise
 document.getElementById('conn').onclick=()=>{if(stActive){doConnect();toast('Verbindung verlängert (5 min)');}else{cnDismissed=false;maybeShowConnect();}};
 setInterval(renderConn,1000);
@@ -727,7 +787,7 @@ function applyState(d){
   stFetchErr=!!(d&&d.__fetchError);
   const connected=!!(d&&d.connected);
   if(!stFetchErr){
-    stActive=!!(d&&d.active);stExpires=(d&&d.expiresAt)||0;stConnected=connected;
+    stActive=!!(d&&d.active);stExpires=(d&&d.expiresAt)||0;stConnected=connected;activeSysId=stActive?((d&&d.systemId)||null):null;
     if(wasActive===true&&!stActive&&!cnDismissed){expiredNote=true;}
     if(stActive){cnDismissed=false;expiredNote=false;connBg.classList.remove('open');}
     wasActive=stActive;
@@ -762,7 +822,7 @@ async function pollOnce(){
 function startPolling(){pollOnce();setInterval(()=>{if(document.visibilityState!=='hidden')pollOnce();},1500);}
 
 // ---- boot ----
-renderSystems();
+loadSystems();
 applyTabVisibility();
 go('panel');
 if(load('mb-introseen')!=='1')introBg.classList.add('open');

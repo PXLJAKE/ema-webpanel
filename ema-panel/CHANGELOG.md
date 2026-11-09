@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0
+- Manage several systems in the app: add, edit, delete and sort them on the Anlagen page (name, address, port, group), also remote ones via a MyFRITZ/DynDNS name. Tap a system to connect; one connection at a time. The list is stored in `/data/systems.json`; the add-on options only create the first entry on first start.
+- New API: `GET/POST /api/systems`, `POST /api/systems/delete`, `POST /api/systems/order`; `POST /api/connect` takes an optional `id`.
+
 ## 0.2.0
 - Connect on demand: the panel allows only one keypad user at a time, so the add-on no longer holds a session permanently. The UI asks to connect on start, the connection closes after 5 minutes without activity (key presses and a tap on the status pill extend it), and a "Trennen" button on every page lets go immediately so the original app can be used.
 - New API: `POST /api/connect`, `POST /api/disconnect` (JSON only); `/api/state` reports `active`, `expiresAt`, `idleMs`.

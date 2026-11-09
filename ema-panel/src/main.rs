@@ -8,6 +8,7 @@
 mod config;
 mod panel;
 mod probe;
+mod systems;
 
 use axum::{
     extract::State,
@@ -20,6 +21,7 @@ use config::Options;
 use panel::{Button, Led, LedVal, Panel};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use systems::{System, SystemInput};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -38,6 +40,9 @@ const SESSION_MS: u64 = 5 * 60 * 1000;
 #[serde(rename_all = "camelCase")]
 struct Snapshot {
     connected: bool,
+    /// which system is (being) connected
+    system_id: Option<String>,
+    system_name: Option<String>,
     /// someone asked for a connection (and it has not timed out / been closed yet)
     active: bool,
     /// when the wanted connection expires (ms since epoch), 0 when inactive
@@ -87,6 +92,10 @@ struct Shared {
     opts: Options,
     /// set while /api/probe runs so the poller leaves the panel alone
     paused: AtomicBool,
+    /// the managed list of alarm systems (persisted in /data)
+    systems: systems::Store,
+    /// the system a connection is wanted for
+    target: RwLock<Option<System>>,
     /// connection wanted until this time (ms since epoch); 0 = not wanted, poller stays idle
     wanted_until: AtomicU64,
 }
@@ -120,12 +129,8 @@ fn clip(s: &str) -> String {
 
 async fn run_poller(shared: Arc<Shared>, mut rx: mpsc::UnboundedReceiver<Cmd>) {
     let o = &shared.opts;
-    if o.panel_host.is_empty() {
-        set_error(&shared, "Kein Panel-Host in den Add-on-Optionen eingetragen.".into(), false);
-        return;
-    }
-    println!("polling panel {}:{} (group {})", o.panel_host, o.panel_port, o.user_group);
-    let mut panel = Panel::new(&o.panel_host, o.panel_port, &o.user_group);
+    let mut cur: Option<System> = None;
+    let mut panel = Panel::new("", 0, "1");
     let mut init: Option<panel::InitInfo> = None;
     let mut errors = 0u32;
     let mut backoff = 2u64;
@@ -138,6 +143,7 @@ async fn run_poller(shared: Arc<Shared>, mut rx: mpsc::UnboundedReceiver<Cmd>) {
             if !idle_done {
                 println!("connection closed (disconnect or {} s without activity)", SESSION_MS / 1000);
                 init = None;
+                cur = None;
                 errors = 0;
                 backoff = 2;
                 while rx.try_recv().is_ok() {} // never replay old commands later
@@ -149,6 +155,23 @@ async fn run_poller(shared: Arc<Shared>, mut rx: mpsc::UnboundedReceiver<Cmd>) {
             continue;
         }
         idle_done = false;
+
+        // ---- which system? a different (or edited) one means a fresh session
+        let target = shared.target.read().unwrap().clone();
+        let Some(target) = target else {
+            shared.wanted_until.store(0, Ordering::Relaxed);
+            continue;
+        };
+        if cur.as_ref() != Some(&target) {
+            println!("polling {} ({}:{}, group {})", target.name, target.host, target.port, target.group);
+            panel = Panel::new(&target.host, target.port, &target.group);
+            init = None;
+            errors = 0;
+            backoff = 2;
+            while rx.try_recv().is_ok() {}
+            *shared.snap.write().unwrap() = Snapshot { mode: "plaintext", control: o.control_enabled, ..Default::default() };
+            cur = Some(target);
+        }
         if shared.paused.load(Ordering::Relaxed) {
             init = None; // sessions are cheap, a fresh one after the probe is safest
             tokio::time::sleep(Duration::from_millis(250)).await;
@@ -326,7 +349,7 @@ async fn health(State(sh): State<Arc<Shared>>) -> Response {
         Json(json!({
             "ok": true,
             "version": VERSION,
-            "panelConfigured": !sh.opts.panel_host.is_empty(),
+            "panelConfigured": !sh.systems.list().is_empty(),
             "connected": connected,
             "control": sh.opts.control_enabled,
             "mode": "plaintext",
@@ -343,6 +366,12 @@ async fn state(State(sh): State<Arc<Shared>>) -> Response {
     snap.active = until > now_ms();
     snap.expires_at = if snap.active { until } else { 0 };
     snap.idle_ms = SESSION_MS;
+    if snap.active {
+        if let Some(t) = sh.target.read().unwrap().as_ref() {
+            snap.system_id = Some(t.id.clone());
+            snap.system_name = Some(t.name.clone());
+        }
+    }
     snap.raw = Raw::default(); // keep the poll payload small; raw is in /api/connect-test
     no_store(Json(snap).into_response())
 }
@@ -359,7 +388,7 @@ async fn connect_test(State(sh): State<Arc<Shared>>) -> Response {
     no_store(
         Json(json!({
             "ok": s.connected,
-            "host": format!("{}:{}", sh.opts.panel_host, sh.opts.panel_port),
+            "host": sh.target.read().unwrap().as_ref().map(|t| format!("{}:{}", t.host, t.port)).unwrap_or_default(),
             "mode": "plaintext",
             "sessionId": s.session_id,
             "counter": s.counter,
@@ -373,21 +402,37 @@ async fn connect_test(State(sh): State<Arc<Shared>>) -> Response {
 
 /// Read-only transport diagnostics (plain GETs without key codes, see probe.rs).
 async fn probe_route(State(sh): State<Arc<Shared>>) -> Response {
+    let Some(t) = sh.target.read().unwrap().clone().or_else(|| sh.systems.first()) else {
+        return reject(StatusCode::SERVICE_UNAVAILABLE, "Noch keine Anlage angelegt.");
+    };
     sh.paused.store(true, Ordering::Relaxed);
     tokio::time::sleep(Duration::from_secs(3)).await;
-    let r = probe::run(&sh.opts.panel_host, sh.opts.panel_port, &sh.opts.user_group).await;
+    let r = probe::run(&t.host, t.port, &t.group).await;
     sh.paused.store(false, Ordering::Relaxed);
     no_store(Json(r).into_response())
 }
 
-/// Ask the add-on to open (or keep open) the session to the panel. JSON only, like /api/key.
-async fn connect(State(sh): State<Arc<Shared>>, Json(_): Json<serde_json::Value>) -> Response {
-    if sh.opts.panel_host.is_empty() {
-        return reject(StatusCode::SERVICE_UNAVAILABLE, "Kein Panel-Host in den Add-on-Optionen eingetragen.");
+#[derive(Deserialize, Default)]
+struct ConnectReq {
+    id: Option<String>,
+}
+
+/// Ask the add-on to open (or keep open) the session to a system. JSON only, like /api/key.
+async fn connect(State(sh): State<Arc<Shared>>, Json(req): Json<ConnectReq>) -> Response {
+    let chosen = match req.id.as_deref().filter(|i| !i.is_empty()) {
+        Some(id) => match sh.systems.get(id) {
+            Some(s) => Some(s),
+            None => return reject(StatusCode::NOT_FOUND, "Anlage nicht gefunden."),
+        },
+        None => sh.target.read().unwrap().clone().and_then(|t| sh.systems.get(&t.id)).or_else(|| sh.systems.first()),
+    };
+    let Some(sys) = chosen else {
+        return reject(StatusCode::SERVICE_UNAVAILABLE, "Noch keine Anlage angelegt. Lege zuerst eine an.");
+    };
+    if !wanted(&sh) || sh.target.read().unwrap().as_ref().map(|t| t.id != sys.id).unwrap_or(true) {
+        println!("connection requested for {}", sys.name);
     }
-    if !wanted(&sh) {
-        println!("connection requested");
-    }
+    *sh.target.write().unwrap() = Some(sys);
     touch(&sh);
     no_store(Json(json!({ "ok": true, "expiresAt": sh.wanted_until.load(Ordering::Relaxed) })).into_response())
 }
@@ -396,6 +441,60 @@ async fn connect(State(sh): State<Arc<Shared>>, Json(_): Json<serde_json::Value>
 async fn disconnect(State(sh): State<Arc<Shared>>, Json(_): Json<serde_json::Value>) -> Response {
     sh.wanted_until.store(0, Ordering::Relaxed);
     no_store(Json(json!({ "ok": true })).into_response())
+}
+
+// ---- managing the list of systems (names/addresses only, never touches the panel)
+
+async fn systems_list(State(sh): State<Arc<Shared>>) -> Response {
+    let active = if wanted(&sh) { sh.target.read().unwrap().as_ref().map(|t| t.id.clone()) } else { None };
+    no_store(Json(json!({ "ok": true, "systems": sh.systems.list(), "activeId": active })).into_response())
+}
+
+async fn systems_save(State(sh): State<Arc<Shared>>, Json(input): Json<SystemInput>) -> Response {
+    match sh.systems.upsert(input) {
+        Ok(sys) => {
+            println!("system saved: {} ({}:{})", sys.name, sys.host, sys.port);
+            // an edited active system is picked up by the poller (it reconnects when the entry changed)
+            if let Some(t) = sh.target.write().unwrap().as_mut() {
+                if t.id == sys.id {
+                    *t = sys.clone();
+                }
+            }
+            no_store(Json(json!({ "ok": true, "system": sys })).into_response())
+        }
+        Err(e) => reject(StatusCode::BAD_REQUEST, &e),
+    }
+}
+
+#[derive(Deserialize)]
+struct IdReq {
+    id: String,
+}
+
+async fn systems_delete(State(sh): State<Arc<Shared>>, Json(req): Json<IdReq>) -> Response {
+    match sh.systems.delete(&req.id) {
+        Ok(()) => {
+            let was_target = sh.target.read().unwrap().as_ref().map(|t| t.id == req.id).unwrap_or(false);
+            if was_target {
+                sh.wanted_until.store(0, Ordering::Relaxed);
+                *sh.target.write().unwrap() = None;
+            }
+            no_store(Json(json!({ "ok": true })).into_response())
+        }
+        Err(e) => reject(StatusCode::NOT_FOUND, &e),
+    }
+}
+
+#[derive(Deserialize)]
+struct OrderReq {
+    ids: Vec<String>,
+}
+
+async fn systems_order(State(sh): State<Arc<Shared>>, Json(req): Json<OrderReq>) -> Response {
+    match sh.systems.reorder(&req.ids) {
+        Ok(()) => no_store(Json(json!({ "ok": true })).into_response()),
+        Err(e) => reject(StatusCode::INTERNAL_SERVER_ERROR, &e),
+    }
 }
 
 #[derive(Deserialize)]
@@ -458,6 +557,17 @@ async fn main() {
         println!("Nur-Lesen-Modus: es werden keine Befehle an die Anlage gesendet.");
     }
 
+    // first start only: the add-on options become the first system, afterwards the UI manages the list
+    let seed = (!opts.panel_host.is_empty()).then(|| System {
+        id: "default".into(),
+        name: "Meine Anlage".into(),
+        host: opts.panel_host.clone(),
+        port: opts.panel_port,
+        group: opts.user_group.clone(),
+    });
+    let store = systems::Store::load(&std::env::var("SYSTEMS_PATH").unwrap_or_else(|_| "/data/systems.json".into()), seed);
+    println!("{} system(s) configured", store.list().len());
+
     let (tx, rx) = mpsc::unbounded_channel();
     let shared = Arc::new(Shared {
         snap: RwLock::new(Snapshot { mode: "plaintext", control: opts.control_enabled, ..Default::default() }),
@@ -465,6 +575,8 @@ async fn main() {
         opts: opts.clone(),
         paused: AtomicBool::new(false),
         wanted_until: AtomicU64::new(0),
+        systems: store,
+        target: RwLock::new(None),
     });
 
     tokio::spawn(run_poller(shared.clone(), rx));
@@ -477,6 +589,9 @@ async fn main() {
         .route("/api/probe", get(probe_route))
         .route("/api/key", post(key))
         .route("/api/connect", post(connect))
+        .route("/api/systems", get(systems_list).post(systems_save))
+        .route("/api/systems/delete", post(systems_delete))
+        .route("/api/systems/order", post(systems_order))
         .route("/api/disconnect", post(disconnect))
         .with_state(shared);
 
