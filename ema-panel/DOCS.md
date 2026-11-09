@@ -4,6 +4,8 @@ Modern web keypad for a compatible intrusion alarm panel, shown in the Home Assi
 
 **Unofficial. No affiliation, no warranty, use at your own risk.**
 
+Full step-by-step guide (German): https://github.com/PXLJAKE/ema-webpanel/blob/main/docs/SETUP.md
+
 ## Setup
 
 1. Set **Panel address** (IP of the transmitter unit in your network) and, if needed, the
