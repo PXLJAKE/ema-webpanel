@@ -91,8 +91,19 @@ pub struct IoInfo {
     pub leds: Vec<LedVal>,
 }
 
+/// One LCD cell: a printable character, or the index (0..15) of a custom glyph whose
+/// bitmap comes from `ui_12540_sz.xml`.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(untagged)]
+pub enum Cell {
+    Glyph(u8),
+    Ch(String),
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ControlInfo {
+    pub cells1: Vec<Cell>,
+    pub cells2: Vec<Cell>,
     pub counter: String,
     pub locked: bool,
     pub leds: Vec<(String, LedVal)>,
@@ -115,6 +126,12 @@ fn text_of(node: Node) -> String {
 
 fn child_text(node: Node, name: &str) -> Option<String> {
     find(node, name).map(text_of)
+}
+
+/// Display name of an init entry: `<Button nr="1"><Text>Name</Text></Button>` (real panel)
+/// or plain `<B1>Name</B1>`.
+fn label_of(node: Node) -> String {
+    node.children().find(|n| n.is_element() && n.tag_name().name() == "Text").map(text_of).unwrap_or_else(|| text_of(node))
 }
 
 fn element_children<'a, 'i>(node: Node<'a, 'i>) -> Vec<Node<'a, 'i>> {
@@ -140,40 +157,70 @@ pub fn parse_led(v: &str) -> LedVal {
     LedVal { color: color.into(), state: state.into() }
 }
 
-/// Map a character code of the panel's LCD to a Unicode char.
-/// Printable ASCII is identical; the upper half follows Latin-1 plus the common
-/// HD44780 "A00" umlaut positions (0xE1/0xEF/0xF5/0xE2), which don't clash with
-/// anything a German panel would show. Codes < 0x20 are custom glyphs -> blank.
+/// Map a character code of the panel's LCD (HD44780 "A00" ROM) to a Unicode char.
+/// Printable ASCII is identical; 0x7E/0x7F are arrows, 0xA1..0xDF are half-width katakana
+/// (U+FF61..), and the German umlauts sit at 0xE1/0xEF/0xF5 with ß at 0xE2.
 fn lcd_char(b: u8) -> char {
     match b {
-        0x20..=0x7E => b as char,
+        0x7E => '→',
+        0x7F => '←',
+        0x20..=0x7D => b as char,
         0xE1 => 'ä',
         0xEF => 'ö',
         0xF5 => 'ü',
         0xE2 => 'ß',
-        0xA0..=0xFF => b as char, // Latin-1
+        0xA1..=0xDF => char::from_u32(0xFF61 + (b as u32 - 0xA1)).unwrap_or(' '),
+        0xA0 | 0xE0..=0xFF => b as char, // Latin-1 for the rest
         _ => ' ',
     }
 }
 
-/// Display text arrives as comma-separated hex codes ("48,61,6C,..."). Anything
-/// that doesn't look like that is returned unchanged.
-pub fn decode_lcd(raw: &str) -> String {
+fn hex_codes(raw: &str) -> Option<Vec<u8>> {
     let t = raw.trim();
     if t.is_empty() {
-        return String::new();
+        return None;
     }
     let parts: Vec<&str> = t.split(',').map(str::trim).collect();
-    let all_hex = parts.iter().all(|p| (1..=2).contains(&p.len()) && p.bytes().all(|c| c.is_ascii_hexdigit()));
-    if !all_hex {
-        return t.to_string();
+    if !parts.iter().all(|p| (1..=2).contains(&p.len()) && p.bytes().all(|c| c.is_ascii_hexdigit())) {
+        return None;
     }
-    parts
-        .iter()
-        .map(|p| lcd_char(u8::from_str_radix(p, 16).unwrap_or(0x20)))
-        .collect::<String>()
-        .trim_end()
-        .to_string()
+    Some(parts.iter().map(|p| u8::from_str_radix(p, 16).unwrap_or(0x20)).collect())
+}
+
+/// Per-cell version of the display text; codes below 0x10 become glyph indices.
+pub fn decode_cells(raw: &str) -> Vec<Cell> {
+    match hex_codes(raw) {
+        Some(codes) => codes.into_iter().map(|b| if b < 0x10 { Cell::Glyph(b) } else { Cell::Ch(lcd_char(b).to_string()) }).collect(),
+        None => raw.trim().chars().map(|c| Cell::Ch(c.to_string())).collect(),
+    }
+}
+
+/// The 5x8 bitmaps of the custom glyphs from `ui_12540_sz.xml`: up to 16 entries of 8 row bytes.
+pub fn parse_signs(xml: &str) -> Result<(String, Vec<Vec<u8>>), String> {
+    let doc = parse_doc(xml)?;
+    let root = find(doc.root_element(), "ui_12540_sz").ok_or("Antwort enthält kein <ui_12540_sz>")?;
+    let counter = child_text(root, "Counter").ok_or("kein Counter in der Antwort")?;
+    let glyphs = root
+        .descendants()
+        .filter(|n| n.is_element() && n.tag_name().name() == "Code")
+        .take(16)
+        .map(|n| {
+            let mut rows = hex_codes(&text_of(n)).unwrap_or_default();
+            rows.resize(8, 0);
+            rows
+        })
+        .collect();
+    Ok((counter, glyphs))
+}
+
+/// Display text arrives as comma-separated hex codes ("48,61,6C,..."). Anything
+/// that doesn't look like that is returned unchanged. Custom glyphs become blanks here;
+/// use `decode_cells` for the faithful version.
+pub fn decode_lcd(raw: &str) -> String {
+    match hex_codes(raw) {
+        Some(codes) => codes.into_iter().map(|b| if b < 0x10 { ' ' } else { lcd_char(b) }).collect::<String>().trim_end().to_string(),
+        None => raw.trim().to_string(),
+    }
 }
 
 fn parse_doc(xml: &str) -> Result<Document<'_>, String> {
@@ -194,12 +241,12 @@ pub fn parse_init(xml: &str) -> Result<InitInfo, String> {
     let decode_name = |s: String| if s.contains(',') { decode_lcd(&s) } else { s };
 
     if let Some(lp) = find(root, "LED_Page") {
-        info.led_names = element_children(lp).into_iter().map(|n| decode_name(text_of(n))).collect();
+        info.led_names = element_children(lp).into_iter().map(|n| decode_name(label_of(n))).collect();
     }
     if let Some(bp) = find(root, "Button_Page") {
         for n in element_children(bp) {
             let tag = n.tag_name().name().to_string();
-            let val = text_of(n);
+            let val = label_of(n);
             match tag.as_str() {
                 "Page_12540" => info.page_control = !val.eq_ignore_ascii_case("off"),
                 "Page_Button" => info.page_buttons = !val.eq_ignore_ascii_case("off"),
@@ -238,8 +285,11 @@ pub fn parse_control(xml: &str) -> Result<ControlInfo, String> {
         }
     }
     if let Some(d) = find(root, "Display") {
-        info.line1 = decode_lcd(&child_text(d, "Text_80_01").unwrap_or_default());
-        info.line2 = decode_lcd(&child_text(d, "Text_80_02").unwrap_or_default());
+        let (r1, r2) = (child_text(d, "Text_80_01").unwrap_or_default(), child_text(d, "Text_80_02").unwrap_or_default());
+        info.line1 = decode_lcd(&r1);
+        info.line2 = decode_lcd(&r2);
+        info.cells1 = decode_cells(&r1);
+        info.cells2 = decode_cells(&r2);
         info.cursor_pos = child_text(d, "Cursor_Pos");
         info.cursor_blink = child_text(d, "Cursor_Blink");
     }
@@ -348,6 +398,14 @@ impl Panel {
         Ok((info, xml))
     }
 
+    /// Read the custom glyph bitmaps (ui_12540_sz). The original app does this once after init.
+    pub async fn read_signs(&mut self) -> Result<Vec<Vec<u8>>, String> {
+        let (_, xml) = self.get("ui_12540_sz.xml", "").await?;
+        let (counter, glyphs) = parse_signs(&xml)?;
+        self.cnt = next_counter(&counter);
+        Ok(glyphs)
+    }
+
     /// Read ui_12540 (LCD + status LEDs). `key_cmd` is e.g. "T37T38" or "".
     pub async fn read_control(&mut self, key_cmd: &str) -> Result<(ControlInfo, String), String> {
         let (_, xml) = self.get("ui_12540.xml", key_cmd).await?;
@@ -390,6 +448,33 @@ mod tests {
         assert_eq!(next_counter("0009"), "000A");
         assert_eq!(next_counter("FFFF"), "FFFF");
         assert_eq!(next_counter("9abc"), "9ABD");
+    }
+
+    const REAL_INIT: &str = "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\n<ui_init>\n\t<Init>\n\t\t<Counter>40E5</Counter>\n\t\t<Session_ID>01</Session_ID>\n\t</Init>\n\t<Button_Page>\n\t\t<Page_12540>On</Page_12540>\n\t\t<Page_Button>On</Page_Button>\n\t\t<Page_LED>On</Page_LED>\n\t\t<Button nr=\"1\"><Text>Garage</Text></Button>\n\t\t<Button nr=\"2\"><Text></Text></Button>\n\t\t<LED nr=\"1\"><Text>Feuer</Text></LED>\n\t</Button_Page>\n\t<LED_Page>\n\t\t<LED nr=\"1\"><Text>Feueralarm</Text></LED>\n\t</LED_Page>\n</ui_init>";
+
+    #[test]
+    fn real_init_names_come_from_text_children() {
+        let i = parse_init(REAL_INIT).unwrap();
+        assert_eq!(i.session_id, "01");
+        assert_eq!(i.led_names, vec!["Feueralarm"]);
+        assert_eq!(i.button_names, vec![("Button".into(), "Garage".into()), ("Button".into(), "".into()), ("LED".into(), "Feuer".into())]);
+        assert!(i.page_leds);
+    }
+
+    #[test]
+    fn lcd_cells_keep_glyphs_and_map_a00() {
+        let c = decode_cells("42,C6,0A,7E,E1,20");
+        assert_eq!(c, vec![Cell::Ch("B".into()), Cell::Ch("ﾆ".into()), Cell::Glyph(10), Cell::Ch("→".into()), Cell::Ch("ä".into()), Cell::Ch(" ".into())]);
+        assert_eq!(decode_lcd("42,0A,E1"), "B ä");
+    }
+
+    #[test]
+    fn signs_parse() {
+        let x = "<ui_12540_sz><Counter>0005</Counter><SZeichen><Code>1F,11,11,11,11,11,1F,00</Code></SZeichen><SZeichen><Code>04</Code></SZeichen></ui_12540_sz>";
+        let (c, g) = parse_signs(x).unwrap();
+        assert_eq!(c, "0005");
+        assert_eq!(g[0], vec![0x1F, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1F, 0]);
+        assert_eq!(g[1], vec![4, 0, 0, 0, 0, 0, 0, 0]);
     }
 
     #[test]
