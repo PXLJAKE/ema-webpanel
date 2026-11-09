@@ -6,6 +6,13 @@
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#0b1017">
 <title>Alarm Keypad</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Alarm Keypad">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
 /* Phone-first app shell. Served through Home Assistant Ingress (inside an iframe,
    under a dynamic base path) — every fetch/asset path is RELATIVE. Read-only. */
@@ -239,6 +246,13 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .conn-result pre{max-height:220px;overflow:auto;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px;font-size:11px;white-space:pre-wrap;word-break:break-word;margin:6px 0 0}
 
 [hidden]{display:none!important}
+.sheet .grp{font-family:var(--font-head);font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:20px 0 4px}
+.setrow select{font:inherit;font-size:14px;color:var(--fg);background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:7px 10px}
+.secbar{padding:8px 16px;background:var(--alarm-soft);color:var(--fg);font-size:12.5px;font-weight:700;text-align:center;border-bottom:1px solid var(--border);flex:none;cursor:pointer}
+.login-bg{background:var(--bg)}
+.modal .pwfld{margin-top:4px}
+.modal .linkbtn{background:none;border:0;color:var(--muted);font-size:13px;margin-top:12px;text-decoration:underline;padding:4px}
+.verline{color:var(--muted);font-size:11.5px;text-align:center;margin-top:14px}
 
 /* ======================= TABLET / DESKTOP ======================= */
 @media (min-width:820px){
@@ -247,7 +261,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     grid-template-rows:auto auto 1fr;
     grid-template-areas:"head head" "bar bar" "nav main";}
   .topbar{grid-area:head;position:static}
-  .robar{grid-area:bar}
+  .robar,.secbar{grid-area:bar}
   .tabbar{grid-area:nav;position:static;flex-direction:column;border-top:0;border-right:1px solid var(--border);padding:12px 0 env(safe-area-inset-bottom,0px)}
   .tabbar .inner{flex-direction:column;max-width:none;width:100%;gap:6px;padding:0 10px}
   .tab{flex:none;border-radius:12px;padding:12px 4px;font-size:11px;gap:5px}
@@ -301,6 +315,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     <button class="iconbtn" id="themeBtn" title="Hell/Dunkel" aria-label="Hell/Dunkel umschalten">◐</button>
     <button class="iconbtn" id="setBtn" title="Einstellungen" aria-label="Einstellungen">⚙</button>
   </header>
+  <div class="secbar" id="secbar" hidden>⚠ Kein Passwort gesetzt · jeder mit diesem Link sieht die Anlage. Tippen zum Festlegen.</div>
   <div class="robar" id="robar">👁 Nur-Lesen-Modus · es werden keine Befehle an die Anlage gesendet</div>
 
   <main class="main noscroll" id="main">
@@ -358,19 +373,55 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
   </div></nav>
 </div>
 
-<!-- FIRST-RUN INFO (no login — HA already authenticates) -->
+<!-- FIRST-RUN INFO / SETUP (HA: info only; standalone: also offers a password) -->
 <div class="modal-bg" id="introBg">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="inTitle">
     <div class="logo">AK</div>
     <h2 id="inTitle">Alarm&nbsp;Keypad</h2>
-    <p>Dieses Panel zeigt deine Alarmanlage <b>live</b> an – direkt aus Home&nbsp;Assistant, lokal in deinem Netzwerk.</p>
+    <p id="inLead">Dieses Panel zeigt deine Alarmanlage <b>live</b> an, lokal in deinem Netzwerk.</p>
     <ul>
-      <li><span class="b">👁</span><div>Standard ist <b>Nur-Lesen</b>: Status, Display und LEDs werden angezeigt, es werden keine Befehle gesendet. Steuern schaltest du bewusst in den Add-on-Einstellungen ein.</div></li>
-      <li><span class="b">⚙</span><div>Host, Port und Gruppe stellst du in den <b>Add-on-Einstellungen</b> von Home Assistant ein.</div></li>
-      <li><span class="b">🔌</span><div>Unter „Verbindung testen" siehst du die Rohdaten der Anlage.</div></li>
+      <li><span class="b">👁</span><div>Standard ist <b>Nur-Lesen</b>: Status, Display und LEDs werden angezeigt, es werden keine Befehle gesendet. Steuern schaltest du bewusst unter <b>⚙ Einstellungen</b> ein.</div></li>
+      <li><span class="b">🏠</span><div>Deine Anlagen (Adresse, Port, Gruppe) legst du direkt hier unter <b>Anlagen</b> an.</div></li>
+      <li><span class="b">🔌</span><div>Unter „Verbindung testen“ siehst du die Rohdaten der Anlage.</div></li>
     </ul>
+    <div id="inSetup" hidden>
+      <p style="margin-bottom:8px"><b>Zugang schützen (empfohlen)</b><br>Wenn die Seite auch von außen erreichbar ist (z.&nbsp;B. über einen Cloudflare-Tunnel), lege ein Passwort fest.</p>
+      <div class="fld pwfld"><label for="inPw1">Passwort (mind. 6 Zeichen)</label><input id="inPw1" type="password" autocomplete="new-password"></div>
+      <div class="fld"><label for="inPw2">Passwort wiederholen</label><input id="inPw2" type="password" autocomplete="new-password"></div>
+      <div class="formerr" id="inErr"></div>
+      <button class="btn-primary" id="inSave">Passwort speichern und weiter</button>
+      <button class="linkbtn" id="inSkip">Ohne Passwort weiter</button>
+    </div>
     <button class="btn-primary" id="introOk">Verstanden</button>
   </div>
+</div>
+
+<!-- LOGIN (standalone with a password) -->
+<div class="modal-bg login-bg" id="loginBg">
+  <form class="modal" role="dialog" aria-modal="true" aria-labelledby="lgTitle" id="loginForm">
+    <div class="logo">AK</div>
+    <h2 id="lgTitle">Anmelden</h2>
+    <p style="text-align:center">Alarm&nbsp;Keypad ist mit einem Passwort geschützt.</p>
+    <input type="text" name="username" value="alarm-keypad" autocomplete="username" hidden>
+    <div class="fld"><label for="lgPw">Passwort</label><input id="lgPw" type="password" autocomplete="current-password" required></div>
+    <div class="formerr" id="lgErr"></div>
+    <button class="btn-primary" id="lgBtn" type="submit">Anmelden</button>
+    <div class="verline">Passwort vergessen? Datei <code>settings.json</code> im Datenordner löschen und den Container neu starten (Anlagen bleiben erhalten).</div>
+  </form>
+</div>
+
+<!-- PASSWORD: set / change / remove, or confirm a sensitive change -->
+<div class="modal-bg" id="pwBg">
+  <form class="modal" role="dialog" aria-modal="true" aria-labelledby="pwTitle" id="pwForm">
+    <h2 id="pwTitle">Passwort festlegen</h2>
+    <p id="pwHint" class="hint"></p>
+    <input type="text" name="username" value="alarm-keypad" autocomplete="username" hidden>
+    <div class="fld" id="pwCurWrap"><label for="pwCur">Aktuelles Passwort</label><input id="pwCur" type="password" autocomplete="current-password"></div>
+    <div class="fld" id="pwNewWrap"><label for="pwNew">Neues Passwort (mind. 6 Zeichen)</label><input id="pwNew" type="password" autocomplete="new-password"></div>
+    <div class="fld" id="pwNew2Wrap"><label for="pwNew2">Neues Passwort wiederholen</label><input id="pwNew2" type="password" autocomplete="new-password"></div>
+    <div class="formerr" id="pwErr"></div>
+    <div class="row2"><button class="btn-ghost" id="pwCancel" type="button">Abbrechen</button><button class="btn-primary" id="pwOk" type="submit">Speichern</button></div>
+  </form>
 </div>
 
 <!-- SYSTEM EDITOR -->
@@ -417,12 +468,24 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 <div class="sheet" id="sheet">
   <div class="grab"></div>
   <h3>Einstellungen</h3>
-  <p class="hint">Seiten ein- oder ausblenden.</p>
+  <p class="hint">Anlage und Zugang werden auf dem Server gespeichert und gelten für alle Geräte.</p>
+  <div class="grp">Anlage</div>
+  <div class="setrow"><div class="name"><span id="roName">Steuern erlauben</span><small id="roLabel">Aus: nur Ansicht, es werden keine Befehle gesendet.</small></div><button class="toggle" id="ctlToggle" aria-pressed="false" aria-label="Steuern erlauben"></button></div>
+  <div class="setrow"><div class="name">Abfrage-Intervall<small>Wie oft der Zustand gelesen wird, solange verbunden.</small></div>
+    <select id="pollSel" aria-label="Abfrage-Intervall"><option value="500">0,5 s</option><option value="1000">1 s</option><option value="2000">2 s</option><option value="5000">5 s</option></select></div>
+  <div id="secGroup" hidden>
+    <div class="grp">Zugang</div>
+    <div class="setrow"><div class="name"><span id="pwName">Passwort</span><small id="pwLabel">Kein Passwort: jeder, der die Seite erreicht, sieht die Anlage.</small></div><button class="btn-ghost" id="pwBtn">Festlegen</button></div>
+    <div class="setrow" id="pwRemoveRow" hidden><div class="name">Passwort entfernen<small>Danach ist keine Anmeldung mehr nötig.</small></div><button class="btn-ghost" id="pwRemoveBtn" style="color:var(--alarm)">Entfernen</button></div>
+    <div class="setrow" id="logoutRow" hidden><div class="name">Abmelden<small>Nur auf diesem Gerät.</small></div><button class="btn-ghost" id="logoutBtn">Abmelden</button></div>
+    <div class="hintbox" style="margin:10px 0 0">Tipp für den Zugriff von außen: Cloudflare Tunnel mit <b>Cloudflare Access</b> (Login per E-Mail-Code) davorschalten. Das Passwort hier ist dann die zweite Sicherung.</div>
+  </div>
+  <div class="grp">Ansicht (dieses Gerät)</div>
   <div id="pageToggles"></div>
-  <div class="setrow"><div class="name"><span id="roName">Nur-Lesen-Modus</span><small id="roLabel">Es werden keine Befehle an die Anlage gesendet.</small></div><span class="pill-static" id="roStatus">nur lesen</span></div>
   <div class="setrow"><div class="name">Info erneut anzeigen</div><button class="btn-ghost" id="showIntro">Anzeigen</button></div>
   <div class="setrow"><div class="name">Verbindung zur Anlage testen<small>Nur lesen – zeigt Status und Rohdaten.</small></div><button class="btn-ghost" id="connTestBtn">Testen</button></div>
   <div class="conn-result" id="connResult" hidden></div>
+  <div class="verline" id="verLine"></div>
   <div style="margin-top:16px;display:flex;justify-content:flex-end;align-items:center">
     <button class="btn-primary" id="closeSheet" style="width:auto;padding:11px 26px">Fertig</button>
   </div>
@@ -452,11 +515,11 @@ function applyControl(on){
   const robar=document.getElementById('robar');
   if(controlOn){robar.hidden=true;}
   else{robar.hidden=false;robar.textContent='👁 Nur-Lesen-Modus · es werden keine Befehle an die Anlage gesendet';}
-  const rs=document.getElementById('roStatus'),rl=document.getElementById('roLabel'),rn=document.getElementById('roName');
-  if(rs){rs.textContent=controlOn?'Steuern aktiv':'nur lesen';rs.style.background=controlOn?'var(--warn-soft)':'var(--ok-soft)';rs.style.color=controlOn?'var(--warn)':'var(--ok)';}
-  if(rn)rn.textContent=controlOn?'Steuern aktiv':'Nur-Lesen-Modus';
-  if(rl)rl.textContent=controlOn?'Befehle an die Anlage sind aktiviert (im Add-on eingeschaltet).':'Nur-Lesen-Modus (Steuern im Add-on aus).';
+  const tg=document.getElementById('ctlToggle'),rl=document.getElementById('roLabel');
+  if(tg&&!ctlBusy)tg.setAttribute('aria-pressed',controlOn);
+  if(rl)rl.textContent=controlOn?'An: Tasten, EIN/AUS und Taster senden echte Befehle (EIN/AUS und Taster mit Rückfrage).':'Aus: nur Ansicht, es werden keine Befehle gesendet.';
 }
+let ctlBusy=false;
 // POST a command — ONLY ever called from an explicit user tap, never from polling.
 async function sendKey(body,okMsg){
   try{
@@ -723,8 +786,9 @@ TABS.forEach(t=>{const on=hiddenTabs.indexOf(t.v)<0;const r=document.createEleme
 
 // intro modal (info only)
 const introBg=document.getElementById('introBg');
-document.getElementById('introOk').onclick=()=>{store('mb-introseen','1');introBg.classList.remove('open');maybeShowConnect();};
-document.getElementById('showIntro').onclick=()=>{closeSheet();introBg.classList.add('open');};
+function closeIntro(){store('mb-introseen','1');introBg.classList.remove('open');maybeShowConnect();}
+document.getElementById('introOk').onclick=closeIntro;
+document.getElementById('showIntro').onclick=()=>{closeSheet();openIntro();};
 
 // connection test (read-only) -> relative api/connect-test
 document.getElementById('connTestBtn').onclick=async()=>{
@@ -733,7 +797,7 @@ document.getElementById('connTestBtn').onclick=async()=>{
   try{
     const r=await fetch('api/connect-test',{cache:'no-store'});
     let d={};try{d=await r.json();}catch(e){}
-    if(r.status===503){box.innerHTML='<span class="bad">Anlage nicht konfiguriert</span> – Host in den Add-on-Einstellungen setzen.';}
+    if(r.status===503){box.innerHTML='<span class="bad">Anlage nicht konfiguriert</span> – lege unter „Anlagen“ eine Anlage an.';}
     else if(d&&d.ok){
       let h='<span class="ok">✓ Verbunden</span> · '+esc(d.host||'')+' · '+esc(d.mode||'')+'<br>Session: '+esc(d.sessionId||'–');
       if(d.state){h+='<div class="lcd-prev">'+esc(d.state.line1||'')+'\n'+esc(d.state.line2||'')+'</div>';}
@@ -769,7 +833,7 @@ function renderConn(){
   if(key!==lastSysKey){lastSysKey=key;renderSystems();}
 }
 function maybeShowConnect(){
-  if(stFetchErr||stActive||cnDismissed||!sysLoaded||introBg.classList.contains('open')||sysBg.classList.contains('open')){return;}
+  if(loginOpen||stFetchErr||stActive||cnDismissed||!sysLoaded||introBg.classList.contains('open')||sysBg.classList.contains('open')){return;}
   const dsys=defSys();
   if(!dsys){document.getElementById('cnTitle').textContent='Noch keine Anlage';document.getElementById('cnMsg').textContent='Lege zuerst eine Anlage an: Name, Adresse (IP oder MyFRITZ-/DynDNS-Name), Port und Gruppe.';document.getElementById('cnYes').textContent='Anlage hinzufügen';connBg.classList.add('open');return;}
   document.getElementById('cnYes').textContent='Verbinden';
@@ -821,14 +885,121 @@ async function pollOnce(){
 }
 function startPolling(){pollOnce();setInterval(()=>{if(document.visibilityState!=='hidden')pollOnce();},1500);}
 
+// ====================================================================
+//  Run mode, server-side settings, optional login (standalone Docker)
+// ====================================================================
+let runMode='homeassistant',authRequired=false,passwordSet=false,loginOpen=false,booted=false;
+const isHA=()=>runMode==='homeassistant';
+const loginBg=document.getElementById('loginBg');
+// any 401 from the API means the login expired or was changed: ask again
+const rawFetch=window.fetch.bind(window);
+window.fetch=async(...a)=>{const r=await rawFetch(...a);if(r.status===401&&String(a[0]).indexOf('api/auth/')<0)checkLogin();return r;};
+// a request that raced a password change can 401 although this browser is signed in: ask the server first
+let checking=false;
+async function checkLogin(){if(loginOpen||checking)return;checking=true;
+  try{const r=await rawFetch('api/auth/status',{cache:'no-store'});const d=await r.json();if(d.authRequired&&!d.loggedIn)showLogin();}catch(e){}
+  checking=false;}
+function showLogin(){if(loginOpen)return;loginOpen=true;closeSheet();introBg.classList.remove('open');connBg.classList.remove('open');loginBg.classList.add('open');document.getElementById('lgErr').textContent='';setTimeout(()=>{try{document.getElementById('lgPw').focus();}catch(e){}},50);}
+document.getElementById('loginForm').onsubmit=async(e)=>{
+  e.preventDefault();const btn=document.getElementById('lgBtn'),err=document.getElementById('lgErr');err.textContent='';btn.disabled=true;
+  try{await postJSON('api/auth/login',{password:document.getElementById('lgPw').value});
+    document.getElementById('lgPw').value='';loginOpen=false;loginBg.classList.remove('open');await refreshSettings();boot();}
+  catch(er){err.textContent=er.message||String(er);}
+  btn.disabled=false;
+};
+function privateHost(h){return /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1\]?$|.*\.local$|.*\.lan$|.*\.home$|.*\.fritz\.box$)/i.test(h)||!/[a-z]/i.test(h.replace(/^\[|\]$/g,''));}
+function applySettings(d){
+  if(!d)return;
+  if(d.runMode)runMode=d.runMode;
+  if(typeof d.authRequired==='boolean')authRequired=d.authRequired;
+  if(typeof d.passwordSet==='boolean')passwordSet=d.passwordSet;
+  if(typeof d.control==='boolean')applyControl(d.control);
+  if(d.pollIntervalMs){const sel=document.getElementById('pollSel');const v=String(d.pollIntervalMs);if(![].some.call(sel.options,o=>o.value===v)){const o=document.createElement('option');o.value=v;o.textContent=(d.pollIntervalMs/1000).toLocaleString('de-DE')+' s';sel.appendChild(o);}sel.value=v;}
+  if(d.version)document.getElementById('verLine').textContent='Alarm Keypad '+d.version+' · '+(isHA()?'Home Assistant':'Docker');
+  document.getElementById('secGroup').hidden=isHA();
+  document.getElementById('pwBtn').textContent=passwordSet?'Ändern':'Festlegen';
+  document.getElementById('pwLabel').textContent=passwordSet?'Gesetzt: zum Öffnen ist eine Anmeldung nötig.':'Kein Passwort: jeder, der die Seite erreicht, sieht die Anlage.';
+  document.getElementById('pwRemoveRow').hidden=!passwordSet;
+  document.getElementById('logoutRow').hidden=!passwordSet;
+  // reached from outside without any password: say so loudly
+  document.getElementById('secbar').hidden=isHA()||passwordSet||privateHost(location.hostname);
+  document.getElementById('inLead').innerHTML=isHA()?'Dieses Panel zeigt deine Alarmanlage <b>live</b> an, direkt aus Home&nbsp;Assistant, lokal in deinem Netzwerk.':'Dieses Panel zeigt deine Alarmanlage <b>live</b> an. Alles wird hier eingerichtet, Dateien oder Variablen brauchst du nicht.';
+}
+async function refreshSettings(){try{const r=await fetch('api/settings',{cache:'no-store'});if(r.ok)applySettings(await r.json());}catch(e){}}
+function openIntro(){
+  const setup=!isHA()&&!passwordSet;
+  document.getElementById('inSetup').hidden=!setup;document.getElementById('introOk').hidden=setup;
+  document.getElementById('inErr').textContent='';introBg.classList.add('open');
+}
+document.getElementById('inSkip').onclick=closeIntro;
+document.getElementById('inSave').onclick=async()=>{
+  const a=document.getElementById('inPw1').value,b=document.getElementById('inPw2').value,err=document.getElementById('inErr');err.textContent='';
+  if(a.length<6){err.textContent='Passwort: mindestens 6 Zeichen.';return;}
+  if(a!==b){err.textContent='Die Passwörter sind nicht gleich.';return;}
+  try{await postJSON('api/auth/password',{new:a});document.getElementById('inPw1').value=document.getElementById('inPw2').value='';toast('Passwort gespeichert');await refreshSettings();closeIntro();}
+  catch(e){err.textContent=e.message||String(e);}
+};
+
+// password dialog: mode 'set' | 'change' | 'remove' | 'confirm' -> Promise<string|null>
+const pwBg=document.getElementById('pwBg');let pwResolve=null,pwMode='set';
+function openPw(mode,title,hint,okLabel){
+  pwMode=mode;document.getElementById('pwTitle').textContent=title;document.getElementById('pwHint').textContent=hint||'';document.getElementById('pwOk').textContent=okLabel||'Speichern';
+  document.getElementById('pwCurWrap').hidden=(mode==='set');
+  document.getElementById('pwNewWrap').hidden=document.getElementById('pwNew2Wrap').hidden=(mode==='remove'||mode==='confirm');
+  ['pwCur','pwNew','pwNew2'].forEach(i=>document.getElementById(i).value='');document.getElementById('pwErr').textContent='';
+  pwBg.classList.add('open');setTimeout(()=>{try{document.getElementById(mode==='set'?'pwNew':'pwCur').focus();}catch(e){}},50);
+  return new Promise(res=>{pwResolve=res;});
+}
+function closePw(v){pwBg.classList.remove('open');if(pwResolve){const r=pwResolve;pwResolve=null;r(v);}}
+document.getElementById('pwCancel').onclick=()=>closePw(null);
+document.getElementById('pwForm').onsubmit=async(e)=>{
+  e.preventDefault();const err=document.getElementById('pwErr');err.textContent='';
+  const cur=document.getElementById('pwCur').value,n1=document.getElementById('pwNew').value,n2=document.getElementById('pwNew2').value;
+  if(pwMode==='confirm'){if(!cur){err.textContent='Passwort eingeben.';return;}closePw(cur);return;}
+  if(pwMode!=='remove'){if(n1.length<6){err.textContent='Neues Passwort: mindestens 6 Zeichen.';return;}if(n1!==n2){err.textContent='Die neuen Passwörter sind nicht gleich.';return;}}
+  try{await postJSON('api/auth/password',{current:cur||undefined,new:pwMode==='remove'?'':n1});
+    closePw('ok');toast(pwMode==='remove'?'Passwort entfernt':'Passwort gespeichert');await refreshSettings();}
+  catch(er){err.textContent=er.message||String(er);}
+};
+document.getElementById('pwBtn').onclick=()=>passwordSet?openPw('change','Passwort ändern','Alle anderen Geräte werden dabei abgemeldet.'):openPw('set','Passwort festlegen','Danach ist zum Öffnen eine Anmeldung nötig. Dieses Gerät bleibt angemeldet.');
+document.getElementById('pwRemoveBtn').onclick=()=>openPw('remove','Passwort entfernen','Danach kann jeder, der die Seite erreicht, die Anlage sehen.','Entfernen');
+document.getElementById('logoutBtn').onclick=async()=>{try{await postJSON('api/auth/logout');}catch(e){}closeSheet();showLogin();};
+document.getElementById('secbar').onclick=()=>{openSheet();document.getElementById('pwBtn').click();};
+
+// "Steuern erlauben": on needs a confirmation (and the password when one is set), off is immediate
+document.getElementById('ctlToggle').onclick=async(e)=>{
+  if(ctlBusy)return;const tg=e.currentTarget;const want=!controlOn;let pw;
+  if(want){
+    if(!(await showConfirm('Steuern erlauben? Danach senden Tasten, EIN/AUS und Taster echte Befehle an die Anlage (EIN/AUS und Taster mit Rückfrage).')))return;
+    if(authRequired){pw=await openPw('confirm','Passwort bestätigen','Zum Einschalten der Steuerung bitte das Passwort eingeben.','Einschalten');if(!pw)return;}
+  }
+  ctlBusy=true;tg.setAttribute('aria-pressed',want);
+  try{const d=await postJSON('api/settings',{control:want,password:pw});ctlBusy=false;applySettings(d);toast(want?'Steuern ist an':'Nur-Lesen-Modus');}
+  catch(er){ctlBusy=false;applyControl(controlOn);toast('Fehler: '+(er.message||er));}
+};
+document.getElementById('pollSel').onchange=async(e)=>{try{applySettings(await postJSON('api/settings',{pollIntervalMs:parseInt(e.target.value,10)}));toast('Gespeichert');}catch(er){toast('Fehler: '+(er.message||er));}};
+
 // ---- boot ----
-loadSystems();
-applyTabVisibility();
-go('panel');
-if(load('mb-introseen')!=='1')introBg.classList.add('open');
-applyControl(false);
-loadHealth();
-startPolling();
+function boot(){
+  if(booted)return;booted=true;
+  loadSystems();
+  if(load('mb-introseen')!=='1')openIntro();
+  loadHealth();
+  startPolling();
+}
+(async()=>{
+  applyTabVisibility();
+  go('panel');
+  applyControl(false);
+  let st=null;
+  try{const r=await rawFetch('api/auth/status',{cache:'no-store'});if(r.ok)st=await r.json();}catch(e){}
+  if(st){runMode=st.runMode||runMode;applySettings(st);}
+  // installable app (PWA) outside Home Assistant; HA has its own app
+  if(!isHA()&&'serviceWorker' in navigator&&window.isSecureContext){navigator.serviceWorker.register('sw.js').catch(()=>{});}
+  if(st&&st.authRequired&&!st.loggedIn){showLogin();return;}
+  await refreshSettings();
+  boot();
+})();
 </script>
 </body>
 </html>

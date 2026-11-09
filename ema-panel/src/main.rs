@@ -1,4 +1,4 @@
-//! ema-panel – Home Assistant add-on backend.
+//! ema-panel – backend of the alarm keypad, as Home Assistant add-on or standalone container.
 //!
 //! * A single background task owns the panel session and polls it (read-only).
 //! * Commands (key presses) are only ever queued by an explicit `POST /api/key`,
@@ -8,15 +8,18 @@
 mod config;
 mod panel;
 mod probe;
+mod settings;
 mod systems;
 
 use axum::{
-    extract::State,
-    http::{header, StatusCode},
+    extract::{Request, State},
+    http::{header, HeaderMap, HeaderValue, StatusCode},
+    middleware::{self, Next},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
+use settings::{Mode, Settings};
 use config::Options;
 use panel::{Button, Led, LedVal, Panel};
 use serde::{Deserialize, Serialize};
@@ -28,6 +31,14 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 
 const INDEX_HTML: &str = include_str!("../web/index.html");
+const MANIFEST: &str = include_str!("../web/manifest.webmanifest");
+const SW_JS: &str = include_str!("../web/sw.js");
+const ICON_SVG: &str = include_str!("../web/icon.svg");
+const ICON_192: &[u8] = include_bytes!("../web/icon-192.png");
+const ICON_512: &[u8] = include_bytes!("../web/icon-512.png");
+const ICON_MASKABLE: &[u8] = include_bytes!("../web/icon-maskable-512.png");
+const ICON_APPLE: &[u8] = include_bytes!("../web/apple-touch-icon.png");
+const COOKIE: &str = "ema_session";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const MAX_RAW: usize = 24_000;
 /// The panel allows only one user at its keypad at a time, so the add-on only holds a
@@ -89,7 +100,10 @@ enum Cmd {
 struct Shared {
     snap: RwLock<Snapshot>,
     tx: mpsc::UnboundedSender<Cmd>,
-    opts: Options,
+    /// UI-editable settings (control switch, poll interval, password), persisted in /data
+    settings: Settings,
+    /// failed logins in a row (slows down guessing)
+    login_fails: AtomicU64,
     /// set while /api/probe runs so the poller leaves the panel alone
     paused: AtomicBool,
     /// the managed list of alarm systems (persisted in /data)
@@ -128,7 +142,6 @@ fn clip(s: &str) -> String {
 // ---------------------------------------------------------------- poller
 
 async fn run_poller(shared: Arc<Shared>, mut rx: mpsc::UnboundedReceiver<Cmd>) {
-    let o = &shared.opts;
     let mut cur: Option<System> = None;
     let mut panel = Panel::new("", 0, "1");
     let mut init: Option<panel::InitInfo> = None;
@@ -148,7 +161,7 @@ async fn run_poller(shared: Arc<Shared>, mut rx: mpsc::UnboundedReceiver<Cmd>) {
                 backoff = 2;
                 while rx.try_recv().is_ok() {} // never replay old commands later
                 let mut s = shared.snap.write().unwrap();
-                *s = Snapshot { mode: "plaintext", control: shared.opts.control_enabled, ..Default::default() };
+                *s = Snapshot { mode: "plaintext", control: shared.settings.control(), ..Default::default() };
                 idle_done = true;
             }
             tokio::time::sleep(Duration::from_millis(250)).await;
@@ -169,7 +182,7 @@ async fn run_poller(shared: Arc<Shared>, mut rx: mpsc::UnboundedReceiver<Cmd>) {
             errors = 0;
             backoff = 2;
             while rx.try_recv().is_ok() {}
-            *shared.snap.write().unwrap() = Snapshot { mode: "plaintext", control: o.control_enabled, ..Default::default() };
+            *shared.snap.write().unwrap() = Snapshot { mode: "plaintext", control: shared.settings.control(), ..Default::default() };
             cur = Some(target);
         }
         if shared.paused.load(Ordering::Relaxed) {
@@ -255,7 +268,7 @@ async fn run_poller(shared: Arc<Shared>, mut rx: mpsc::UnboundedReceiver<Cmd>) {
             fast -= 1;
             300
         } else {
-            o.poll_interval_ms
+            shared.settings.poll_ms()
         };
         tokio::time::sleep(Duration::from_millis(wait)).await;
     }
@@ -267,7 +280,7 @@ fn set_error(shared: &Shared, msg: String, keep_connected: bool) {
     if !keep_connected {
         s.connected = false;
     }
-    s.control = shared.opts.control_enabled;
+    s.control = shared.settings.control();
 }
 
 fn apply(
@@ -282,7 +295,7 @@ fn apply(
     s.connected = true;
     s.error = None;
     s.mode = "plaintext";
-    s.control = shared.opts.control_enabled;
+    s.control = shared.settings.control();
     s.session_id = Some(session_id.to_string());
     s.counter = counter.to_string();
     s.updated_at = now_ms();
@@ -351,8 +364,10 @@ async fn health(State(sh): State<Arc<Shared>>) -> Response {
             "version": VERSION,
             "panelConfigured": !sh.systems.list().is_empty(),
             "connected": connected,
-            "control": sh.opts.control_enabled,
+            "control": sh.settings.control(),
             "mode": "plaintext",
+            "runMode": sh.settings.mode,
+            "authRequired": sh.settings.auth_required(),
         }))
         .into_response(),
     )
@@ -360,7 +375,7 @@ async fn health(State(sh): State<Arc<Shared>>) -> Response {
 
 async fn state(State(sh): State<Arc<Shared>>) -> Response {
     let mut snap = sh.snap.read().unwrap().clone();
-    snap.control = sh.opts.control_enabled;
+    snap.control = sh.settings.control();
     snap.mode = "plaintext";
     let until = sh.wanted_until.load(Ordering::Relaxed);
     snap.active = until > now_ms();
@@ -512,8 +527,8 @@ fn reject(code: StatusCode, msg: &str) -> Response {
 /// 3) fixed key whitelist (no panic/Überfall keys exist)  4) JSON content-type only
 /// (a cross-site form post can't trigger it) 5) every press is logged.
 async fn key(State(sh): State<Arc<Shared>>, Json(req): Json<KeyReq>) -> Response {
-    if !sh.opts.control_enabled {
-        return reject(StatusCode::FORBIDDEN, "Steuern ist in den Add-on-Optionen ausgeschaltet.");
+    if !sh.settings.control() {
+        return reject(StatusCode::FORBIDDEN, "Steuern ist in den Einstellungen ausgeschaltet.");
     }
     if !wanted(&sh) || !sh.snap.read().unwrap().connected {
         return reject(StatusCode::SERVICE_UNAVAILABLE, "Keine Verbindung zur Anlage.");
@@ -542,22 +557,234 @@ async fn key(State(sh): State<Arc<Shared>>, Json(req): Json<KeyReq>) -> Response
     no_store(Json(json!({ "ok": true })).into_response())
 }
 
+// ---------------------------------------------------------------- settings (UI)
+
+fn now_s() -> u64 {
+    now_ms() / 1000
+}
+
+async fn settings_get(State(sh): State<Arc<Shared>>) -> Response {
+    no_store(
+        Json(json!({
+            "ok": true,
+            "version": VERSION,
+            "runMode": sh.settings.mode,
+            "control": sh.settings.control(),
+            "pollIntervalMs": sh.settings.poll_ms(),
+            "passwordSet": sh.settings.has_password(),
+            "authRequired": sh.settings.auth_required(),
+        }))
+        .into_response(),
+    )
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SettingsReq {
+    control: Option<bool>,
+    poll_interval_ms: Option<u64>,
+    /// current password, needed to turn control ON while a login is set
+    password: Option<String>,
+}
+
+async fn settings_save(State(sh): State<Arc<Shared>>, Json(req): Json<SettingsReq>) -> Response {
+    if let Some(on) = req.control {
+        if on && !sh.settings.control() && sh.settings.auth_required() {
+            let ok = req.password.as_deref().map(|p| sh.settings.check_password(p)).unwrap_or(false);
+            if !ok {
+                slow_down(&sh).await;
+                return reject(StatusCode::FORBIDDEN, "Passwort falsch.");
+            }
+        }
+        if on != sh.settings.control() {
+            println!("{}", if on { "WARNUNG: Steuern wurde in der Oberfläche eingeschaltet." } else { "Steuern wurde in der Oberfläche ausgeschaltet (nur lesen)." });
+        }
+        if let Err(e) = sh.settings.set_control(on) {
+            return reject(StatusCode::INTERNAL_SERVER_ERROR, &e);
+        }
+        sh.snap.write().unwrap().control = on;
+    }
+    if let Some(ms) = req.poll_interval_ms {
+        if let Err(e) = sh.settings.set_poll(ms) {
+            return reject(StatusCode::INTERNAL_SERVER_ERROR, &e);
+        }
+    }
+    settings_get(State(sh)).await
+}
+
+// ---------------------------------------------------------------- login (standalone only)
+
+fn cookie_token(headers: &HeaderMap) -> Option<String> {
+    headers.get_all(header::COOKIE).iter().filter_map(|v| v.to_str().ok()).flat_map(|v| v.split(';')).find_map(|c| {
+        let (k, v) = c.trim().split_once('=')?;
+        (k == COOKIE).then(|| v.to_string())
+    })
+}
+
+fn logged_in(sh: &Shared, headers: &HeaderMap) -> bool {
+    !sh.settings.auth_required() || cookie_token(headers).map(|t| sh.settings.verify_token(&t, now_s())).unwrap_or(false)
+}
+
+/// `Secure` only when the browser reached us over HTTPS (e.g. Cloudflare Tunnel, reverse proxy).
+fn https(headers: &HeaderMap) -> bool {
+    headers.get("x-forwarded-proto").and_then(|v| v.to_str().ok()).map(|v| v.eq_ignore_ascii_case("https")).unwrap_or(false)
+}
+
+fn with_cookie(mut r: Response, headers: &HeaderMap, value: &str, max_age: u64) -> Response {
+    let c = format!(
+        "{COOKIE}={value}; Path=/; Max-Age={max_age}; HttpOnly; SameSite=Strict{}",
+        if https(headers) { "; Secure" } else { "" }
+    );
+    if let Ok(v) = HeaderValue::from_str(&c) {
+        r.headers_mut().append(header::SET_COOKIE, v);
+    }
+    r
+}
+
+/// After a wrong password: wait, longer with every failure in a row (max 10 s).
+async fn slow_down(sh: &Shared) {
+    let n = sh.login_fails.fetch_add(1, Ordering::Relaxed) + 1;
+    eprintln!("wrong password ({n} in a row)");
+    tokio::time::sleep(Duration::from_millis((n * 700).min(10_000))).await;
+}
+
+async fn auth_status(State(sh): State<Arc<Shared>>, headers: HeaderMap) -> Response {
+    no_store(
+        Json(json!({
+            "ok": true,
+            "runMode": sh.settings.mode,
+            "authRequired": sh.settings.auth_required(),
+            "passwordSet": sh.settings.has_password(),
+            "loggedIn": logged_in(&sh, &headers),
+        }))
+        .into_response(),
+    )
+}
+
+#[derive(Deserialize)]
+struct LoginReq {
+    password: String,
+}
+
+async fn login(State(sh): State<Arc<Shared>>, headers: HeaderMap, Json(req): Json<LoginReq>) -> Response {
+    if !sh.settings.auth_required() {
+        return no_store(Json(json!({ "ok": true })).into_response());
+    }
+    if !sh.settings.check_password(&req.password) {
+        slow_down(&sh).await;
+        return reject(StatusCode::UNAUTHORIZED, "Passwort falsch.");
+    }
+    sh.login_fails.store(0, Ordering::Relaxed);
+    let token = sh.settings.issue_token(now_s());
+    with_cookie(no_store(Json(json!({ "ok": true })).into_response()), &headers, &token, settings::SESSION_DAYS * 86_400)
+}
+
+async fn logout(headers: HeaderMap, Json(_): Json<serde_json::Value>) -> Response {
+    with_cookie(no_store(Json(json!({ "ok": true })).into_response()), &headers, "", 0)
+}
+
+#[derive(Deserialize)]
+struct PasswordReq {
+    /// needed when a password is already set
+    current: Option<String>,
+    /// new password; empty or missing removes the login
+    new: Option<String>,
+}
+
+async fn set_password(State(sh): State<Arc<Shared>>, headers: HeaderMap, Json(req): Json<PasswordReq>) -> Response {
+    if sh.settings.mode != Mode::Standalone {
+        return reject(StatusCode::BAD_REQUEST, "In Home Assistant meldet dich Home Assistant an, ein eigenes Passwort ist nicht nötig.");
+    }
+    if sh.settings.has_password() && !req.current.as_deref().map(|p| sh.settings.check_password(p)).unwrap_or(false) {
+        slow_down(&sh).await;
+        return reject(StatusCode::FORBIDDEN, "Aktuelles Passwort falsch.");
+    }
+    let new = req.new.as_deref().filter(|p| !p.is_empty());
+    if let Err(e) = sh.settings.set_password(new) {
+        return reject(StatusCode::BAD_REQUEST, &e);
+    }
+    sh.login_fails.store(0, Ordering::Relaxed);
+    println!("{}", if new.is_some() { "login password set" } else { "login password removed" });
+    let r = no_store(Json(json!({ "ok": true, "authRequired": sh.settings.auth_required() })).into_response());
+    match new {
+        // the cookie key changed: give this browser a fresh login so it stays signed in
+        Some(_) => with_cookie(r, &headers, &sh.settings.issue_token(now_s()), settings::SESSION_DAYS * 86_400),
+        None => with_cookie(r, &headers, "", 0),
+    }
+}
+
+/// Every `/api/` route except health and login needs a valid cookie once a password is set.
+async fn require_login(State(sh): State<Arc<Shared>>, req: Request, next: Next) -> Response {
+    let p = req.uri().path();
+    let open = !p.starts_with("/api/") || p == "/api/health" || p == "/api/auth/status" || p == "/api/auth/login" || p == "/api/auth/logout";
+    if open || logged_in(&sh, req.headers()) {
+        next.run(req).await
+    } else {
+        reject(StatusCode::UNAUTHORIZED, "Bitte anmelden.")
+    }
+}
+
+// ---------------------------------------------------------------- static files (PWA)
+
+fn asset(ct: &'static str, body: impl IntoResponse, cache: &'static str) -> Response {
+    let mut r = body.into_response();
+    r.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static(ct));
+    r.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static(cache));
+    r
+}
+
+const DAY: &str = "public, max-age=86400";
+
+async fn manifest() -> Response {
+    asset("application/manifest+json", MANIFEST, DAY)
+}
+async fn sw() -> Response {
+    asset("text/javascript; charset=utf-8", SW_JS, "no-cache")
+}
+async fn icon_svg() -> Response {
+    asset("image/svg+xml", ICON_SVG, DAY)
+}
+async fn icon_192() -> Response {
+    asset("image/png", ICON_192, DAY)
+}
+async fn icon_512() -> Response {
+    asset("image/png", ICON_512, DAY)
+}
+async fn icon_maskable() -> Response {
+    asset("image/png", ICON_MASKABLE, DAY)
+}
+async fn icon_apple() -> Response {
+    asset("image/png", ICON_APPLE, DAY)
+}
+
 // ---------------------------------------------------------------- main
 
 #[tokio::main]
 async fn main() {
     let opts = Options::load();
+    let options_present = std::path::Path::new(&config::options_path()).exists();
+    let mode = Mode::detect(&config::options_path());
+    let data = config::data_dir();
+    if let Err(e) = std::fs::create_dir_all(&data) {
+        eprintln!("data folder {data} not usable: {e}");
+    }
+    let settings = Settings::load(&format!("{data}/settings.json"), mode, &opts, options_present);
     println!(
-        "ema-panel {VERSION} · host='{}' port={} group={} control={} poll={}ms",
-        opts.panel_host, opts.panel_port, opts.user_group, opts.control_enabled, opts.poll_interval_ms
+        "ema-panel {VERSION} · mode={mode:?} data={data} control={} poll={}ms login={}",
+        settings.control(),
+        settings.poll_ms(),
+        if settings.auth_required() { "on" } else { "off" }
     );
-    if opts.control_enabled {
+    if settings.control() {
         println!("WARNUNG: Steuern ist aktiviert – Tastendrücke werden an die Anlage gesendet.");
     } else {
         println!("Nur-Lesen-Modus: es werden keine Befehle an die Anlage gesendet.");
     }
+    if mode == Mode::Standalone && !settings.has_password() {
+        println!("Hinweis: kein Passwort gesetzt. Wer die Seite erreicht, sieht die Anlage. Passwort in den Einstellungen festlegen.");
+    }
 
-    // first start only: the add-on options become the first system, afterwards the UI manages the list
+    // first start only: the options (HA) or env vars become the first system, afterwards the UI manages the list
     let seed = (!opts.panel_host.is_empty()).then(|| System {
         id: "default".into(),
         name: "Meine Anlage".into(),
@@ -565,14 +792,15 @@ async fn main() {
         port: opts.panel_port,
         group: opts.user_group.clone(),
     });
-    let store = systems::Store::load(&std::env::var("SYSTEMS_PATH").unwrap_or_else(|_| "/data/systems.json".into()), seed);
+    let store = systems::Store::load(&std::env::var("SYSTEMS_PATH").unwrap_or_else(|_| format!("{data}/systems.json")), seed);
     println!("{} system(s) configured", store.list().len());
 
     let (tx, rx) = mpsc::unbounded_channel();
     let shared = Arc::new(Shared {
-        snap: RwLock::new(Snapshot { mode: "plaintext", control: opts.control_enabled, ..Default::default() }),
+        snap: RwLock::new(Snapshot { mode: "plaintext", control: settings.control(), ..Default::default() }),
         tx,
-        opts: opts.clone(),
+        settings,
+        login_fails: AtomicU64::new(0),
         paused: AtomicBool::new(false),
         wanted_until: AtomicU64::new(0),
         systems: store,
@@ -583,6 +811,14 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(index))
+        .route("/index.html", get(index))
+        .route("/manifest.webmanifest", get(manifest))
+        .route("/sw.js", get(sw))
+        .route("/icon.svg", get(icon_svg))
+        .route("/icon-192.png", get(icon_192))
+        .route("/icon-512.png", get(icon_512))
+        .route("/icon-maskable-512.png", get(icon_maskable))
+        .route("/apple-touch-icon.png", get(icon_apple))
         .route("/api/health", get(health))
         .route("/api/state", get(state))
         .route("/api/connect-test", get(connect_test))
@@ -593,14 +829,32 @@ async fn main() {
         .route("/api/systems/delete", post(systems_delete))
         .route("/api/systems/order", post(systems_order))
         .route("/api/disconnect", post(disconnect))
+        .route("/api/settings", get(settings_get).post(settings_save))
+        .route("/api/auth/status", get(auth_status))
+        .route("/api/auth/login", post(login))
+        .route("/api/auth/logout", post(logout))
+        .route("/api/auth/password", post(set_password))
+        .layer(middleware::from_fn_with_state(shared.clone(), require_login))
         .with_state(shared);
 
     let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8099);
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await.expect("bind");
     println!("listening on :{port}");
-    axum::serve(listener, app).with_graceful_shutdown(async {
-        let _ = tokio::signal::ctrl_c().await;
-    })
-    .await
-    .expect("server");
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async {
+            let ctrl_c = async {
+                let _ = tokio::signal::ctrl_c().await;
+            };
+            #[cfg(unix)]
+            let term = async {
+                if let Ok(mut s) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                    s.recv().await;
+                }
+            };
+            #[cfg(not(unix))]
+            let term = std::future::pending::<()>();
+            tokio::select! { _ = ctrl_c => {}, _ = term => {} }
+        })
+        .await
+        .expect("server");
 }

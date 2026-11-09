@@ -3,11 +3,21 @@
 ## Overview
 
 ```
-Browser (HA sidebar, Ingress)  --HTTP-->  ema-panel add-on (Rust)  --HTTP GET-->  panel (LAN)
+Browser (HA sidebar, Ingress)  --HTTP-->  ema-panel (Rust)  --HTTP GET-->  panel (LAN)
+Browser / PWA (LAN or tunnel)  --HTTP-->  ema-panel (Rust)
 ```
 
-The add-on runs next to Home Assistant. Home Assistant authenticates the user and proxies the
-page through Ingress. The add-on is the only component that talks to the panel.
+One binary and one image, two run modes:
+
+- **Home Assistant add-on** (detected by `SUPERVISOR_TOKEN` or `/data/options.json`): HA
+  authenticates the user and proxies the page through Ingress. The add-on options seed the
+  settings; a changed option wins on the next start.
+- **Standalone** (plain Docker): everything is set up in the UI. An optional password protects
+  the API (signed HttpOnly cookie, Argon2 hash). `EMA_MODE` overrides the detection.
+
+Persistent files in `DATA_DIR` (default `/data`): `systems.json` (the systems) and
+`settings.json` (control switch, poll interval, password hash, cookie key). ema-panel is the
+only component that talks to the panel.
 
 ## Components
 
