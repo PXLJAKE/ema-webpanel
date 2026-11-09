@@ -110,17 +110,18 @@ pub fn clamp_poll(ms: u64) -> u64 {
 
 impl Settings {
     pub fn load(path: &str, mode: Mode, opts: &Options, options_file_present: bool) -> Settings {
-        let existing = std::fs::read_to_string(path).ok().and_then(
-            |s| match serde_json::from_str::<Data>(&s) {
-                Ok(d) => Some(d),
-                Err(e) => {
-                    eprintln!(
+        let existing =
+            std::fs::read_to_string(path).ok().and_then(|s| {
+                match serde_json::from_str::<Data>(&s) {
+                    Ok(d) => Some(d),
+                    Err(e) => {
+                        eprintln!(
                         "{path} unreadable ({e}); starting with defaults (view only, no password)"
                     );
-                    None
+                        None
+                    }
                 }
-            },
-        );
+            });
         let first = existing.is_none();
         let mut d = existing.unwrap_or_default();
         if first {
@@ -278,6 +279,9 @@ mod tests {
             user_group: "1".into(),
             control_enabled: control,
             poll_interval_ms: poll,
+            mqtt_entities: false,
+            mqtt_group: String::new(),
+            mqtt_buttons: false,
         }
     }
 

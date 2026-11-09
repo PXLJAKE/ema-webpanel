@@ -14,3 +14,12 @@ configuration:
   poll_interval_ms:
     name: Abfrage-Intervall (ms)
     description: Wie oft der Zustand abgefragt wird. 1000 ist ein guter Wert. Auch in der App einstellbar; eine Änderung hier gilt ab dem nächsten Start.
+  mqtt_entities:
+    name: Entitäten in Home Assistant (MQTT)
+    description: Zeigt Taster, LEDs und Anzeigen als Entitäten in Home Assistant (für Dashboards und Automationen, z. B. Einbruch-Benachrichtigung). Braucht den Mosquitto-Broker. Dafür hält das Add-on eine eigene Verbindung, die nur die Taster/LED-Seite liest und das Bedienteil frei lässt.
+  mqtt_group:
+    name: Benutzergruppe für Home Assistant
+    description: Leer = dieselbe Gruppe wie die Anlage. Empfohlen ist eine eigene Gruppe (z. B. 2), der du in der Anlage nur Taster und LEDs freigibst, ohne Bedienteil.
+  mqtt_buttons:
+    name: Taster in Home Assistant
+    description: Bietet die Taster als Schaltflächen in Home Assistant an. Wirkt nur, wenn auch „Steuern erlauben“ an ist. Feuer, Wasser und Heizung bleiben reine Anzeige.

@@ -6,6 +6,7 @@
 //! * The web UI (one HTML file) is embedded in the binary.
 
 mod config;
+mod mqtt;
 mod panel;
 mod probe;
 mod settings;
@@ -112,6 +113,8 @@ struct Shared {
     target: RwLock<Option<System>>,
     /// connection wanted until this time (ms since epoch); 0 = not wanted, poller stays idle
     wanted_until: AtomicU64,
+    /// start-up options (MQTT entities etc.)
+    opts: Options,
 }
 
 fn now_ms() -> u64 {
@@ -1018,9 +1021,11 @@ async fn main() {
         wanted_until: AtomicU64::new(0),
         systems: store,
         target: RwLock::new(None),
+        opts: opts.clone(),
     });
 
     tokio::spawn(run_poller(shared.clone(), rx));
+    tokio::spawn(mqtt::run(shared.clone()));
 
     let app = Router::new()
         .route("/", get(index))
