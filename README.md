@@ -15,6 +15,11 @@ desktop, can be installed as an app (PWA), and has a light and a dark theme. No 
   <img src="docs/screenshots/phone-buttons-dark.png" width="230" alt="Function buttons and indicators">
   <img src="docs/screenshots/phone-keypad-light.png" width="230" alt="Keypad on a phone, light theme">
 </p>
+<p align="center">
+  <img src="docs/screenshots/desktop-keypad-dark.png" width="700" alt="Desktop layout, dark theme">
+</p>
+
+**➜ Step-by-step setup guide (German): [docs/SETUP.md](docs/SETUP.md)**
 
 <sub>Screenshots use the built-in demo panel ([`tools/demo-panel.mjs`](tools/demo-panel.mjs)) with made-up data.</sub>
 
@@ -28,7 +33,7 @@ keypad protocol as the vendor's *MB-Remote Control* app, and shows the panel's k
 |---|---|
 | Honeywell / NOVAR **DS7700** IP transmitter (reports as *DS7500 IP*), firmware `ADIST.10.0V08.05`, without AES key | ✅ Tested daily by the author: live display, buttons, LEDs |
 | Other units that work with the *MB-Remote Control V2* app (e.g. other DS7500/DS7700 firmware versions) | 🟡 Very likely, not tested yet |
-| Units with an AES key set in the original app | ⚪ Not supported yet (the protocol is known, encryption is still missing) |
+| Units with an AES key set in the original app | 🟡 Supported since 0.6.0 (same AES scheme as the original app), not yet tested on a real panel |
 
 Rule of thumb: if the original *MB-Remote Control V2* app can show your keypad over the network
 (default port `8016`), this app should work too. Please open an issue with your device and
@@ -41,7 +46,9 @@ used only to describe compatibility; this project is not affiliated with them.
 - Virtual keypad (digits, ▲▼, EIN/AUS, function keys, Revision) and the panel's function buttons
 - **View-only by default.** Sending commands is an explicit setting (*Steuern erlauben*), off by default
 - Arm/disarm and function buttons always ask for confirmation first
-- **Several systems.** Add, edit, sort and delete systems in the app (name, address, port, group), including remote ones via a MyFRITZ/DynDNS name. One connection at a time
+- **Several systems.** Add, edit, sort and delete systems in the app (name, address, port, group, optional AES key, group for Home Assistant), including remote ones via a MyFRITZ/DynDNS name. One connection at a time
+- **Home Assistant entities over MQTT** (optional): the panel's LEDs, Taster states and indicators as binary sensors for dashboards and automations (e.g. burglary alerts), Taster as HA buttons when control is allowed. A separate background session reads only the button/LED page, so it never blocks the keypad (verified on a real panel); it can use its own user group
+- **AES key** support for panels that use one; plain text otherwise
 - **Connects on demand.** The panel allows only one keypad user at a time, so the add-on connects when you tap *Verbinden*, disconnects after 5 minutes without activity or when you tap *Trennen*, leaving the panel free for other apps
 - Responsive layout: phone (bottom tabs) and tablet/desktop (side rail, wide keypad)
 - **Set up entirely in the browser**: systems, *Steuern erlauben*, poll interval and an optional password. No config files or variables
@@ -66,7 +73,7 @@ Then open `http://<docker-host>:8099`. The first start walks you through it: set
 - **Proxmox**: run it in any LXC/VM with Docker, same command as above.
 - The container must reach the panel (e.g. `192.168.178.99:8016`) on your LAN. Normal bridge
   networking is enough.
-- Images: `linux/amd64` and `linux/arm64`, tags `latest` and the version (e.g. `0.4.0`).
+- Images: `linux/amd64` and `linux/arm64`, tags `latest` and the version (e.g. `0.6.0`).
 
 ### Access from outside (Cloudflare Tunnel)
 
@@ -86,6 +93,8 @@ systems stay.
 
 ## Install as Home Assistant add-on
 
+Detailed walkthrough in German: [docs/SETUP.md](docs/SETUP.md).
+
 1. In Home Assistant open **Settings → Add-ons → Add-on store → ⋮ → Repositories** and add
    `https://github.com/PXLJAKE/ema-webpanel`.
 2. Install **Alarm Keypad (EMA)**, open the **Configuration** tab and set the panel address
@@ -104,6 +113,8 @@ local add-on.)
 | `user_group` | `1` | Same group number as in the original app's panel entry |
 | `control_enabled` | `false` | `false` = view only. `true` = keys/buttons send real commands. Also switchable in the app |
 | `poll_interval_ms` | `1000` | How often state is read. Also adjustable in the app |
+| `mqtt_entities` | `false` | Publish LEDs, Taster and indicators as Home Assistant entities (needs the Mosquitto broker add-on) |
+| `mqtt_buttons` | `false` | Also offer the Taster as HA buttons; only works while control is allowed |
 
 The app settings win until you change an option in Home Assistant; a changed option is applied
 on the next add-on start. In Home Assistant no app password is used, HA itself logs you in.
@@ -124,10 +135,20 @@ The app detects Home Assistant by the Supervisor token. Environment variables fo
 
 ## More screenshots
 
-| Desktop / tablet | Systems | Settings |
-|---|---|---|
-| <img src="docs/screenshots/desktop-keypad-dark.png" width="420" alt="Desktop layout"> | <img src="docs/screenshots/phone-systems-light.png" width="200" alt="Systems page"> | <img src="docs/screenshots/phone-settings-light.png" width="200" alt="Settings"> |
-| <img src="docs/screenshots/desktop-buttons-dark.png" width="420" alt="Desktop buttons"> | <img src="docs/screenshots/phone-leds-dark.png" width="200" alt="LEDs page"> | |
+**Phone** (dark and light)
+
+| Keypad | Buttons | LEDs | Systems | Add system | Settings |
+|---|---|---|---|---|---|
+| <img src="docs/screenshots/phone-keypad-dark.png" width="130" alt="Keypad"> | <img src="docs/screenshots/phone-buttons-dark.png" width="130" alt="Buttons"> | <img src="docs/screenshots/phone-leds-dark.png" width="130" alt="LEDs"> | <img src="docs/screenshots/phone-systems-dark.png" width="130" alt="Systems"> | <img src="docs/screenshots/phone-system-dialog-dark.png" width="130" alt="Add system"> | <img src="docs/screenshots/phone-settings-dark.png" width="130" alt="Settings"> |
+| <img src="docs/screenshots/phone-keypad-light.png" width="130" alt="Keypad"> | <img src="docs/screenshots/phone-buttons-light.png" width="130" alt="Buttons"> | <img src="docs/screenshots/phone-leds-light.png" width="130" alt="LEDs"> | <img src="docs/screenshots/phone-systems-light.png" width="130" alt="Systems"> | <img src="docs/screenshots/phone-system-dialog-light.png" width="130" alt="Add system"> | <img src="docs/screenshots/phone-settings-light.png" width="130" alt="Settings"> |
+
+**Desktop / tablet**
+
+| Dark | Light |
+|---|---|
+| <img src="docs/screenshots/desktop-keypad-dark.png" width="420" alt="Keypad, dark"> | <img src="docs/screenshots/desktop-keypad-light.png" width="420" alt="Keypad, light"> |
+| <img src="docs/screenshots/desktop-buttons-dark.png" width="420" alt="Buttons, dark"> | <img src="docs/screenshots/desktop-buttons-light.png" width="420" alt="Buttons, light"> |
+| <img src="docs/screenshots/desktop-leds-dark.png" width="420" alt="LEDs, dark"> | <img src="docs/screenshots/desktop-systems-light.png" width="420" alt="Systems, light"> |
 
 ## Try it without a panel
 
@@ -164,4 +185,6 @@ Modernes Bedienteil für eine kompatible Einbruchmeldeanlage, als Home-Assistant
 Docker-Container (`docker run -p 8099:8099 -v ema-data:/data ghcr.io/pxljake/ema-webpanel`).
 Eingerichtet wird alles im Browser: Anlagen, „Steuern erlauben“ und ein optionales Passwort.
 **Standardmäßig nur Ansicht**; EIN/AUS und Taster fragen immer nach. Von außen am besten über
-Cloudflare Tunnel mit Cloudflare Access. Inoffiziell, ohne Gewähr, Nutzung auf eigene Gefahr.
+Cloudflare Tunnel mit Cloudflare Access. Optional kommen Lampen und Taster per MQTT als
+Entitäten nach Home Assistant, ohne das Bedienteil zu blockieren. Ausführliche Anleitung:
+**[docs/SETUP.md](docs/SETUP.md)**. Inoffiziell, ohne Gewähr, Nutzung auf eigene Gefahr.
