@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.7.2
+- System dialog: the AES key and "Group for HA" moved into a collapsible "Advanced" section (opens by itself when a system already uses one). Both are optional; the guides now say that a separate HA group is not needed, only an extra safeguard.
+
 ## 0.7.1
 - Desktop and tablet: the app now uses the full width, the navigation sits at the left edge instead of floating in the middle. Systems are laid out in as many columns as fit.
 - iPhone (Home Assistant companion app): fixed the broken top. Inside the Home Assistant frame the notch inset is now ignored (HA already handles it), so there is no empty block and the header no longer covers the display. The header is no longer sticky with an offset.

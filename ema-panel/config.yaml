@@ -1,5 +1,5 @@
 name: "Alarm Keypad (EMA)"
-version: "0.7.1"
+version: "0.7.2"
 slug: ema_panel
 description: "Modern web keypad for a compatible intrusion alarm panel. Local, no cloud. Unofficial."
 url: "https://github.com/PXLJAKE/ema-webpanel"

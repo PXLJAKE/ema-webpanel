@@ -47,7 +47,7 @@ used only to describe compatibility; this project is not affiliated with them.
 - **View-only by default.** Sending commands is an explicit setting (*Allow control*), off by default
 - Arm/disarm and function buttons always ask for confirmation first
 - **Several systems.** Add, edit, sort and delete systems in the app (name, address, port, group, optional AES key, group for Home Assistant), including remote ones via a MyFRITZ/DynDNS name. One connection at a time
-- **Home Assistant entities over MQTT** (optional): the panel's LEDs, function button states and indicators as binary sensors for dashboards and automations (e.g. intrusion alerts), function buttons as HA buttons when control is allowed. A separate background session reads only the button/LED page, so it never blocks the keypad (verified on a real panel); it can use its own user group
+- **Home Assistant entities over MQTT** (optional): the panel's LEDs, function button states and indicators as binary sensors for dashboards and automations (e.g. intrusion alerts), function buttons as HA buttons when control is allowed. A separate background session reads only the button/LED page, so it never blocks the keypad (verified on a real panel); optionally it can use a user group of its own as an extra safeguard
 - **AES key** support for panels that use one; plain text otherwise
 - **Connects on demand.** The panel allows only one keypad user at a time, so the add-on connects when you tap *Connect*, disconnects after 5 minutes without activity or when you tap *Disconnect*, leaving the panel free for other apps
 - Responsive layout: phone (bottom tabs) and tablet/desktop (side rail, wide keypad)
