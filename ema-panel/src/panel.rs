@@ -45,7 +45,9 @@ pub fn keypad_code(key: &str) -> Option<&'static str> {
 
 /// Function button 1..=8 -> code "01".."08".
 pub fn taster_code(index_1_based: u8) -> Option<String> {
-    (1..=8).contains(&index_1_based).then(|| format!("{index_1_based:02}"))
+    (1..=8)
+        .contains(&index_1_based)
+        .then(|| format!("{index_1_based:02}"))
 }
 
 // ---------------------------------------------------------------- data model
@@ -117,7 +119,8 @@ pub struct ControlInfo {
 // ---------------------------------------------------------------- parsing
 
 fn find<'a, 'i>(node: Node<'a, 'i>, name: &str) -> Option<Node<'a, 'i>> {
-    node.descendants().find(|n| n.is_element() && n.tag_name().name() == name)
+    node.descendants()
+        .find(|n| n.is_element() && n.tag_name().name() == name)
 }
 
 fn text_of(node: Node) -> String {
@@ -131,7 +134,10 @@ fn child_text(node: Node, name: &str) -> Option<String> {
 /// Display name of an init entry: `<Button nr="1"><Text>Name</Text></Button>` (real panel)
 /// or plain `<B1>Name</B1>`.
 fn label_of(node: Node) -> String {
-    node.children().find(|n| n.is_element() && n.tag_name().name() == "Text").map(text_of).unwrap_or_else(|| text_of(node))
+    node.children()
+        .find(|n| n.is_element() && n.tag_name().name() == "Text")
+        .map(text_of)
+        .unwrap_or_else(|| text_of(node))
 }
 
 fn element_children<'a, 'i>(node: Node<'a, 'i>) -> Vec<Node<'a, 'i>> {
@@ -154,7 +160,10 @@ pub fn parse_led(v: &str) -> LedVal {
     } else {
         "off"
     };
-    LedVal { color: color.into(), state: state.into() }
+    LedVal {
+        color: color.into(),
+        state: state.into(),
+    }
 }
 
 /// Map a character code of the panel's LCD (HD44780 "A00" ROM) to a Unicode char.
@@ -181,24 +190,46 @@ fn hex_codes(raw: &str) -> Option<Vec<u8>> {
         return None;
     }
     let parts: Vec<&str> = t.split(',').map(str::trim).collect();
-    if !parts.iter().all(|p| (1..=2).contains(&p.len()) && p.bytes().all(|c| c.is_ascii_hexdigit())) {
+    if !parts
+        .iter()
+        .all(|p| (1..=2).contains(&p.len()) && p.bytes().all(|c| c.is_ascii_hexdigit()))
+    {
         return None;
     }
-    Some(parts.iter().map(|p| u8::from_str_radix(p, 16).unwrap_or(0x20)).collect())
+    Some(
+        parts
+            .iter()
+            .map(|p| u8::from_str_radix(p, 16).unwrap_or(0x20))
+            .collect(),
+    )
 }
 
 /// Per-cell version of the display text; codes below 0x10 become glyph indices.
 pub fn decode_cells(raw: &str) -> Vec<Cell> {
     match hex_codes(raw) {
-        Some(codes) => codes.into_iter().map(|b| if b < 0x10 { Cell::Glyph(b) } else { Cell::Ch(lcd_char(b).to_string()) }).collect(),
-        None => raw.trim().chars().map(|c| Cell::Ch(c.to_string())).collect(),
+        Some(codes) => codes
+            .into_iter()
+            .map(|b| {
+                if b < 0x10 {
+                    Cell::Glyph(b)
+                } else {
+                    Cell::Ch(lcd_char(b).to_string())
+                }
+            })
+            .collect(),
+        None => raw
+            .trim()
+            .chars()
+            .map(|c| Cell::Ch(c.to_string()))
+            .collect(),
     }
 }
 
 /// The 5x8 bitmaps of the custom glyphs from `ui_12540_sz.xml`: up to 16 entries of 8 row bytes.
 pub fn parse_signs(xml: &str) -> Result<(String, Vec<Vec<u8>>), String> {
     let doc = parse_doc(xml)?;
-    let root = find(doc.root_element(), "ui_12540_sz").ok_or("Antwort enthält kein <ui_12540_sz>")?;
+    let root =
+        find(doc.root_element(), "ui_12540_sz").ok_or("Antwort enthält kein <ui_12540_sz>")?;
     let counter = child_text(root, "Counter").ok_or("kein Counter in der Antwort")?;
     let glyphs = root
         .descendants()
@@ -218,7 +249,12 @@ pub fn parse_signs(xml: &str) -> Result<(String, Vec<Vec<u8>>), String> {
 /// use `decode_cells` for the faithful version.
 pub fn decode_lcd(raw: &str) -> String {
     match hex_codes(raw) {
-        Some(codes) => codes.into_iter().map(|b| if b < 0x10 { ' ' } else { lcd_char(b) }).collect::<String>().trim_end().to_string(),
+        Some(codes) => codes
+            .into_iter()
+            .map(|b| if b < 0x10 { ' ' } else { lcd_char(b) })
+            .collect::<String>()
+            .trim_end()
+            .to_string(),
         None => raw.trim().to_string(),
     }
 }
@@ -236,12 +272,22 @@ pub fn parse_init(xml: &str) -> Result<InitInfo, String> {
     if session_id.is_empty() {
         return Err("leere Session_ID".into());
     }
-    let mut info = InitInfo { session_id, counter, page_control: true, page_buttons: true, page_leds: true, ..Default::default() };
+    let mut info = InitInfo {
+        session_id,
+        counter,
+        page_control: true,
+        page_buttons: true,
+        page_leds: true,
+        ..Default::default()
+    };
 
     let decode_name = |s: String| if s.contains(',') { decode_lcd(&s) } else { s };
 
     if let Some(lp) = find(root, "LED_Page") {
-        info.led_names = element_children(lp).into_iter().map(|n| decode_name(label_of(n))).collect();
+        info.led_names = element_children(lp)
+            .into_iter()
+            .map(|n| decode_name(label_of(n)))
+            .collect();
     }
     if let Some(bp) = find(root, "Button_Page") {
         for n in element_children(bp) {
@@ -265,19 +311,36 @@ pub fn parse_io(xml: &str) -> Result<IoInfo, String> {
     let counter = child_text(root, "Counter").ok_or("kein Counter in der Antwort")?;
     let vals = |name: &str| -> Vec<LedVal> {
         find(root, name)
-            .map(|n| element_children(n).into_iter().map(|c| parse_led(&text_of(c))).collect())
+            .map(|n| {
+                element_children(n)
+                    .into_iter()
+                    .map(|c| parse_led(&text_of(c)))
+                    .collect()
+            })
             .unwrap_or_default()
     };
-    Ok(IoInfo { counter, buttons: vals("Button_Page"), leds: vals("LED_Page") })
+    Ok(IoInfo {
+        counter,
+        buttons: vals("Button_Page"),
+        leds: vals("LED_Page"),
+    })
 }
 
 pub fn parse_control(xml: &str) -> Result<ControlInfo, String> {
     let doc = parse_doc(xml)?;
     let root = find(doc.root_element(), "ui_12540").ok_or("Antwort enthält kein <ui_12540>")?;
     let counter = child_text(root, "Counter").ok_or("kein Counter in der Antwort")?;
-    let mut info = ControlInfo { counter, ..Default::default() };
-    info.locked = child_text(root, "Locked").map(|v| v.eq_ignore_ascii_case("yes")).unwrap_or(false);
-    if let Some(led) = root.children().find(|n| n.is_element() && n.tag_name().name() == "LED") {
+    let mut info = ControlInfo {
+        counter,
+        ..Default::default()
+    };
+    info.locked = child_text(root, "Locked")
+        .map(|v| v.eq_ignore_ascii_case("yes"))
+        .unwrap_or(false);
+    if let Some(led) = root
+        .children()
+        .find(|n| n.is_element() && n.tag_name().name() == "LED")
+    {
         for c in element_children(led) {
             let tag = c.tag_name().name().to_string();
             let v = find(c, "LED").map(text_of).unwrap_or_else(|| text_of(c));
@@ -285,7 +348,10 @@ pub fn parse_control(xml: &str) -> Result<ControlInfo, String> {
         }
     }
     if let Some(d) = find(root, "Display") {
-        let (r1, r2) = (child_text(d, "Text_80_01").unwrap_or_default(), child_text(d, "Text_80_02").unwrap_or_default());
+        let (r1, r2) = (
+            child_text(d, "Text_80_01").unwrap_or_default(),
+            child_text(d, "Text_80_02").unwrap_or_default(),
+        );
         info.line1 = decode_lcd(&r1);
         info.line2 = decode_lcd(&r2);
         info.cells1 = decode_cells(&r1);
@@ -341,7 +407,13 @@ impl Panel {
             .pool_max_idle_per_host(0)
             .build()
             .expect("http client");
-        Panel { http, base: format!("http://{host}:{port}"), group: group.to_string(), sid: "00".into(), cnt: "FFFF".into() }
+        Panel {
+            http,
+            base: format!("http://{host}:{port}"),
+            group: group.to_string(),
+            sid: "00".into(),
+            cnt: "FFFF".into(),
+        }
     }
 
     pub fn session_id(&self) -> &str {
@@ -353,7 +425,10 @@ impl Panel {
 
     /// One GET. `command` is an already-validated `T..` suffix or empty.
     async fn get(&self, page: &str, command: &str) -> Result<(u16, String), String> {
-        let mut url = format!("{}/{page}?B-GR={}&S-ID={}&CNT={}", self.base, self.group, self.sid, self.cnt);
+        let mut url = format!(
+            "{}/{page}?B-GR={}&S-ID={}&CNT={}",
+            self.base, self.group, self.sid, self.cnt
+        );
         if !command.is_empty() {
             url.push('&');
             url.push_str(command);
@@ -366,7 +441,10 @@ impl Panel {
             .await
             .map_err(|e| format!("Anlage nicht erreichbar: {}", describe(&e)))?;
         let status = resp.status().as_u16();
-        let bytes = resp.bytes().await.map_err(|e| format!("Lesefehler: {}", describe(&e)))?;
+        let bytes = resp
+            .bytes()
+            .await
+            .map_err(|e| format!("Lesefehler: {}", describe(&e)))?;
         // The panel serves ISO-8859-1. Valid UTF-8 with multi-byte sequences can't be
         // Latin-1 text in practice, so accept it as UTF-8 and fall back to Latin-1.
         let body: String = match std::str::from_utf8(&bytes) {
@@ -457,14 +535,31 @@ mod tests {
         let i = parse_init(REAL_INIT).unwrap();
         assert_eq!(i.session_id, "01");
         assert_eq!(i.led_names, vec!["Feueralarm"]);
-        assert_eq!(i.button_names, vec![("Button".into(), "Garage".into()), ("Button".into(), "".into()), ("LED".into(), "Feuer".into())]);
+        assert_eq!(
+            i.button_names,
+            vec![
+                ("Button".into(), "Garage".into()),
+                ("Button".into(), "".into()),
+                ("LED".into(), "Feuer".into())
+            ]
+        );
         assert!(i.page_leds);
     }
 
     #[test]
     fn lcd_cells_keep_glyphs_and_map_a00() {
         let c = decode_cells("42,C6,0A,7E,E1,20");
-        assert_eq!(c, vec![Cell::Ch("B".into()), Cell::Ch("ﾆ".into()), Cell::Glyph(10), Cell::Ch("→".into()), Cell::Ch("ä".into()), Cell::Ch(" ".into())]);
+        assert_eq!(
+            c,
+            vec![
+                Cell::Ch("B".into()),
+                Cell::Ch("ﾆ".into()),
+                Cell::Glyph(10),
+                Cell::Ch("→".into()),
+                Cell::Ch("ä".into()),
+                Cell::Ch(" ".into())
+            ]
+        );
         assert_eq!(decode_lcd("42,0A,E1"), "B ä");
     }
 
@@ -483,7 +578,13 @@ mod tests {
         assert_eq!(i.session_id, "AB12");
         assert_eq!(i.counter, "0001");
         assert_eq!(i.led_names, vec!["Alarm", "Strom"]);
-        assert_eq!(i.button_names, vec![("B1".into(), "Garage".into()), ("B2".into(), "Licht".into())]);
+        assert_eq!(
+            i.button_names,
+            vec![
+                ("B1".into(), "Garage".into()),
+                ("B2".into(), "Licht".into())
+            ]
+        );
         assert!(i.page_control && i.page_buttons && !i.page_leds);
     }
 
@@ -492,10 +593,28 @@ mod tests {
         let x = "<ui_io><Counter>0002</Counter><Button_Page><A>GREEN_ON</A><B>RED_BLINK_0</B><C>GREY</C></Button_Page><LED_Page><L>YELLOW_OFF</L></LED_Page></ui_io>";
         let i = parse_io(x).unwrap();
         assert_eq!(i.counter, "0002");
-        assert_eq!(i.buttons[0], LedVal { color: "green".into(), state: "on".into() });
-        assert_eq!(i.buttons[1], LedVal { color: "red".into(), state: "blink".into() });
+        assert_eq!(
+            i.buttons[0],
+            LedVal {
+                color: "green".into(),
+                state: "on".into()
+            }
+        );
+        assert_eq!(
+            i.buttons[1],
+            LedVal {
+                color: "red".into(),
+                state: "blink".into()
+            }
+        );
         assert_eq!(i.buttons[2].state, "off");
-        assert_eq!(i.leds[0], LedVal { color: "yellow".into(), state: "off".into() });
+        assert_eq!(
+            i.leds[0],
+            LedVal {
+                color: "yellow".into(),
+                state: "off".into()
+            }
+        );
     }
 
     #[test]

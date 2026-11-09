@@ -26,12 +26,20 @@ impl Mode {
     /// `EMA_MODE=standalone|homeassistant` wins; otherwise HA is detected by the token the
     /// Supervisor gives every add-on, or by its options file.
     pub fn detect(options_path: &str) -> Mode {
-        match std::env::var("EMA_MODE").unwrap_or_default().to_ascii_lowercase().as_str() {
+        match std::env::var("EMA_MODE")
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .as_str()
+        {
             "standalone" | "docker" => return Mode::Standalone,
             "homeassistant" | "ha" => return Mode::HomeAssistant,
             _ => {}
         }
-        if std::env::var("SUPERVISOR_TOKEN").map(|t| !t.is_empty()).unwrap_or(false) || std::path::Path::new(options_path).exists() {
+        if std::env::var("SUPERVISOR_TOKEN")
+            .map(|t| !t.is_empty())
+            .unwrap_or(false)
+            || std::path::Path::new(options_path).exists()
+        {
             Mode::HomeAssistant
         } else {
             Mode::Standalone
@@ -68,7 +76,13 @@ fn default_poll() -> u64 {
 
 impl Default for Data {
     fn default() -> Self {
-        Data { control_enabled: false, poll_interval_ms: 1000, password_hash: None, secret: String::new(), ha_seen: None }
+        Data {
+            control_enabled: false,
+            poll_interval_ms: 1000,
+            password_hash: None,
+            secret: String::new(),
+            ha_seen: None,
+        }
     }
 }
 
@@ -96,13 +110,17 @@ pub fn clamp_poll(ms: u64) -> u64 {
 
 impl Settings {
     pub fn load(path: &str, mode: Mode, opts: &Options, options_file_present: bool) -> Settings {
-        let existing = std::fs::read_to_string(path).ok().and_then(|s| match serde_json::from_str::<Data>(&s) {
-            Ok(d) => Some(d),
-            Err(e) => {
-                eprintln!("{path} unreadable ({e}); starting with defaults (view only, no password)");
-                None
-            }
-        });
+        let existing = std::fs::read_to_string(path).ok().and_then(
+            |s| match serde_json::from_str::<Data>(&s) {
+                Ok(d) => Some(d),
+                Err(e) => {
+                    eprintln!(
+                        "{path} unreadable ({e}); starting with defaults (view only, no password)"
+                    );
+                    None
+                }
+            },
+        );
         let first = existing.is_none();
         let mut d = existing.unwrap_or_default();
         if first {
@@ -111,7 +129,10 @@ impl Settings {
             d.poll_interval_ms = opts.poll_interval_ms;
         }
         if mode == Mode::HomeAssistant && options_file_present {
-            let now = HaSeen { control_enabled: opts.control_enabled, poll_interval_ms: opts.poll_interval_ms };
+            let now = HaSeen {
+                control_enabled: opts.control_enabled,
+                poll_interval_ms: opts.poll_interval_ms,
+            };
             if d.ha_seen.as_ref() != Some(&now) {
                 if !first {
                     println!("add-on options changed in Home Assistant: applying them");
@@ -125,7 +146,11 @@ impl Settings {
         if d.secret.len() < 32 {
             d.secret = random_hex(32);
         }
-        let s = Settings { path: path.to_string(), mode, data: RwLock::new(d) };
+        let s = Settings {
+            path: path.to_string(),
+            mode,
+            data: RwLock::new(d),
+        };
         if let Err(e) = s.save() {
             eprintln!("{e}");
         }
@@ -133,7 +158,8 @@ impl Settings {
     }
 
     fn save(&self) -> Result<(), String> {
-        let json = serde_json::to_string_pretty(&*self.data.read().unwrap()).map_err(|e| e.to_string())?;
+        let json =
+            serde_json::to_string_pretty(&*self.data.read().unwrap()).map_err(|e| e.to_string())?;
         let tmp = format!("{}.tmp", self.path);
         std::fs::write(&tmp, json).map_err(|e| format!("Speichern fehlgeschlagen: {e}"))?;
         std::fs::rename(&tmp, &self.path).map_err(|e| format!("Speichern fehlgeschlagen: {e}"))
@@ -169,9 +195,13 @@ impl Settings {
     }
 
     pub fn check_password(&self, pw: &str) -> bool {
-        let Some(h) = self.data.read().unwrap().password_hash.clone() else { return false };
+        let Some(h) = self.data.read().unwrap().password_hash.clone() else {
+            return false;
+        };
         match PasswordHash::new(&h) {
-            Ok(parsed) => Argon2::default().verify_password(pw.as_bytes(), &parsed).is_ok(),
+            Ok(parsed) => Argon2::default()
+                .verify_password(pw.as_bytes(), &parsed)
+                .is_ok(),
             Err(_) => false,
         }
     }
@@ -186,7 +216,12 @@ impl Settings {
                 let mut salt = [0u8; 16];
                 getrandom::getrandom(&mut salt).map_err(|e| e.to_string())?;
                 let salt = SaltString::encode_b64(&salt).map_err(|e| e.to_string())?;
-                Some(Argon2::default().hash_password(p.as_bytes(), &salt).map_err(|e| e.to_string())?.to_string())
+                Some(
+                    Argon2::default()
+                        .hash_password(p.as_bytes(), &salt)
+                        .map_err(|e| e.to_string())?
+                        .to_string(),
+                )
             }
             None => None,
         };
@@ -212,14 +247,23 @@ impl Settings {
     }
 
     pub fn verify_token(&self, token: &str, now_s: u64) -> bool {
-        let Some((msg, sig)) = token.rsplit_once('.') else { return false };
-        let Some(exp) = msg.split('.').next().and_then(|e| e.parse::<u64>().ok()) else { return false };
+        let Some((msg, sig)) = token.rsplit_once('.') else {
+            return false;
+        };
+        let Some(exp) = msg.split('.').next().and_then(|e| e.parse::<u64>().ok()) else {
+            return false;
+        };
         if exp <= now_s {
             return false;
         }
         let want = self.sign(msg);
         // constant-time compare
-        want.len() == sig.len() && want.bytes().zip(sig.bytes()).fold(0u8, |a, (x, y)| a | (x ^ y)) == 0
+        want.len() == sig.len()
+            && want
+                .bytes()
+                .zip(sig.bytes())
+                .fold(0u8, |a, (x, y)| a | (x ^ y))
+                == 0
     }
 }
 
@@ -228,7 +272,13 @@ mod tests {
     use super::*;
 
     fn opts(control: bool, poll: u64) -> Options {
-        Options { panel_host: String::new(), panel_port: 8016, user_group: "1".into(), control_enabled: control, poll_interval_ms: poll }
+        Options {
+            panel_host: String::new(),
+            panel_port: 8016,
+            user_group: "1".into(),
+            control_enabled: control,
+            poll_interval_ms: poll,
+        }
     }
 
     fn tmp(name: &str) -> String {
@@ -254,7 +304,7 @@ mod tests {
         let p = tmp("ha");
         let s = Settings::load(&p, Mode::HomeAssistant, &opts(false, 1000), true);
         s.set_control(true).unwrap(); // changed in the UI
-        // same options on restart: UI value stays
+                                      // same options on restart: UI value stays
         assert!(Settings::load(&p, Mode::HomeAssistant, &opts(false, 1000), true).control());
         // option changed in HA: it wins
         let s3 = Settings::load(&p, Mode::HomeAssistant, &opts(true, 2000), true);

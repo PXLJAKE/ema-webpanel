@@ -12,22 +12,22 @@ mod settings;
 mod systems;
 
 use axum::{
-    extract::{Request, State},
+    extract::{Query, Request, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     middleware::{self, Next},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
-use settings::{Mode, Settings};
 use config::Options;
 use panel::{Button, Led, LedVal, Panel};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use systems::{System, SystemInput};
+use settings::{Mode, Settings};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use systems::{System, SystemInput};
 use tokio::sync::mpsc;
 
 const INDEX_HTML: &str = include_str!("../web/index.html");
@@ -115,7 +115,10 @@ struct Shared {
 }
 
 fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 fn wanted(shared: &Shared) -> bool {
@@ -124,7 +127,9 @@ fn wanted(shared: &Shared) -> bool {
 
 /// Keep the connection for another `SESSION_MS` (connect, key press, explicit extend).
 fn touch(shared: &Shared) {
-    shared.wanted_until.store(now_ms() + SESSION_MS, Ordering::Relaxed);
+    shared
+        .wanted_until
+        .store(now_ms() + SESSION_MS, Ordering::Relaxed);
 }
 
 fn clip(s: &str) -> String {
@@ -154,14 +159,21 @@ async fn run_poller(shared: Arc<Shared>, mut rx: mpsc::UnboundedReceiver<Cmd>) {
         // ---- nobody asked for a connection: hold no session, show nothing stale
         if !wanted(&shared) {
             if !idle_done {
-                println!("connection closed (disconnect or {} s without activity)", SESSION_MS / 1000);
+                println!(
+                    "connection closed (disconnect or {} s without activity)",
+                    SESSION_MS / 1000
+                );
                 init = None;
                 cur = None;
                 errors = 0;
                 backoff = 2;
                 while rx.try_recv().is_ok() {} // never replay old commands later
                 let mut s = shared.snap.write().unwrap();
-                *s = Snapshot { mode: "plaintext", control: shared.settings.control(), ..Default::default() };
+                *s = Snapshot {
+                    mode: "plaintext",
+                    control: shared.settings.control(),
+                    ..Default::default()
+                };
                 idle_done = true;
             }
             tokio::time::sleep(Duration::from_millis(250)).await;
@@ -176,13 +188,20 @@ async fn run_poller(shared: Arc<Shared>, mut rx: mpsc::UnboundedReceiver<Cmd>) {
             continue;
         };
         if cur.as_ref() != Some(&target) {
-            println!("polling {} ({}:{}, group {})", target.name, target.host, target.port, target.group);
+            println!(
+                "polling {} ({}:{}, group {})",
+                target.name, target.host, target.port, target.group
+            );
             panel = Panel::new(&target.host, target.port, &target.group);
             init = None;
             errors = 0;
             backoff = 2;
             while rx.try_recv().is_ok() {}
-            *shared.snap.write().unwrap() = Snapshot { mode: "plaintext", control: shared.settings.control(), ..Default::default() };
+            *shared.snap.write().unwrap() = Snapshot {
+                mode: "plaintext",
+                control: shared.settings.control(),
+                ..Default::default()
+            };
             cur = Some(target);
         }
         if shared.paused.load(Ordering::Relaxed) {
@@ -194,7 +213,11 @@ async fn run_poller(shared: Arc<Shared>, mut rx: mpsc::UnboundedReceiver<Cmd>) {
         if init.is_none() {
             match panel.init().await {
                 Ok((info, xml)) => {
-                    println!("session started ({} led names, {} button names)", info.led_names.len(), info.button_names.len());
+                    println!(
+                        "session started ({} led names, {} button names)",
+                        info.led_names.len(),
+                        info.button_names.len()
+                    );
                     {
                         let mut s = shared.snap.write().unwrap();
                         s.raw.init = clip(&xml);
@@ -316,7 +339,12 @@ fn apply(
         let mut leds: Vec<Led> = c
             .leds
             .into_iter()
-            .map(|(tag, v)| Led { name: panel::led_label(&tag), tag, color: v.color, state: v.state })
+            .map(|(tag, v)| Led {
+                name: panel::led_label(&tag),
+                tag,
+                color: v.color,
+                state: v.state,
+            })
             .collect();
         s.leds.retain(|l| l.tag.starts_with("page:"));
         leds.extend(s.leds.drain(..));
@@ -328,8 +356,17 @@ fn apply(
         // LED page -> named by the panel
         s.leds.retain(|l| !l.tag.starts_with("page:"));
         for (i, v) in io.leds.iter().enumerate() {
-            let name = info.led_names.get(i).cloned().unwrap_or_else(|| format!("LED {}", i + 1));
-            s.leds.push(Led { name, tag: format!("page:{}", i + 1), color: v.color.clone(), state: v.state.clone() });
+            let name = info
+                .led_names
+                .get(i)
+                .cloned()
+                .unwrap_or_else(|| format!("LED {}", i + 1));
+            s.leds.push(Led {
+                name,
+                tag: format!("page:{}", i + 1),
+                color: v.color.clone(),
+                state: v.state.clone(),
+            });
         }
         // button page: first 8 = Taster, last 3 = display-only indicators
         let mk = |i: usize, v: Option<&LedVal>| {
@@ -338,17 +375,29 @@ fn apply(
                 .get(i)
                 .cloned()
                 .unwrap_or_else(|| (format!("B{}", i + 1), format!("Taste {}", i + 1)));
-            Button { index: (i + 1) as u8, name, tag, led: v.cloned() }
+            Button {
+                index: (i + 1) as u8,
+                name,
+                tag,
+                led: v.cloned(),
+            }
         };
-        s.buttons = (0..8).filter(|i| *i < info.button_names.len().max(io.buttons.len())).map(|i| mk(i, io.buttons.get(i))).collect();
-        s.indicators = (8..11).filter(|i| *i < info.button_names.len().max(io.buttons.len())).map(|i| mk(i, io.buttons.get(i))).collect();
+        s.buttons = (0..8)
+            .filter(|i| *i < info.button_names.len().max(io.buttons.len()))
+            .map(|i| mk(i, io.buttons.get(i)))
+            .collect();
+        s.indicators = (8..11)
+            .filter(|i| *i < info.button_names.len().max(io.buttons.len()))
+            .map(|i| mk(i, io.buttons.get(i)))
+            .collect();
     }
 }
 
 // ---------------------------------------------------------------- http
 
 fn no_store(mut r: Response) -> Response {
-    r.headers_mut().insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
+    r.headers_mut()
+        .insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
     r
 }
 
@@ -394,11 +443,15 @@ async fn state(State(sh): State<Arc<Shared>>) -> Response {
 /// Read-only diagnostics: last raw XML of each page (no new session, no commands).
 async fn connect_test(State(sh): State<Arc<Shared>>) -> Response {
     let s = sh.snap.read().unwrap().clone();
-    let pages: Vec<_> = [("ui_init.xml", &s.raw.init), ("ui_io.xml", &s.raw.io), ("ui_12540.xml", &s.raw.control)]
-        .into_iter()
-        .filter(|(_, x)| !x.is_empty())
-        .map(|(p, x)| json!({ "page": p, "status": 200, "xml": x }))
-        .collect();
+    let pages: Vec<_> = [
+        ("ui_init.xml", &s.raw.init),
+        ("ui_io.xml", &s.raw.io),
+        ("ui_12540.xml", &s.raw.control),
+    ]
+    .into_iter()
+    .filter(|(_, x)| !x.is_empty())
+    .map(|(p, x)| json!({ "page": p, "status": 200, "xml": x }))
+    .collect();
     let state = json!({ "line1": s.line1, "line2": s.line2, "revision": s.revision, "cursorPos": s.cursor_pos, "cursorBlink": s.cursor_blink });
     no_store(
         Json(json!({
@@ -415,14 +468,44 @@ async fn connect_test(State(sh): State<Arc<Shared>>) -> Response {
     )
 }
 
+#[derive(Deserialize, Default)]
+struct ProbeQuery {
+    /// `lock`: session/keypad-lock test instead of the transport probe
+    mode: Option<String>,
+    /// optional second user group for the lock test
+    group2: Option<String>,
+}
+
 /// Read-only transport diagnostics (plain GETs without key codes, see probe.rs).
-async fn probe_route(State(sh): State<Arc<Shared>>) -> Response {
-    let Some(t) = sh.target.read().unwrap().clone().or_else(|| sh.systems.first()) else {
-        return reject(StatusCode::SERVICE_UNAVAILABLE, "Noch keine Anlage angelegt.");
+async fn probe_route(State(sh): State<Arc<Shared>>, Query(q): Query<ProbeQuery>) -> Response {
+    let Some(t) = sh
+        .target
+        .read()
+        .unwrap()
+        .clone()
+        .or_else(|| sh.systems.first())
+    else {
+        return reject(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Noch keine Anlage angelegt.",
+        );
     };
     sh.paused.store(true, Ordering::Relaxed);
     tokio::time::sleep(Duration::from_secs(3)).await;
-    let r = probe::run(&t.host, t.port, &t.group).await;
+    let r = if q.mode.as_deref() == Some("lock") {
+        probe::lock_test(
+            &t.host,
+            t.port,
+            &t.group,
+            q.group2
+                .as_deref()
+                .filter(|g| !g.is_empty() && g.len() <= 3 && g.chars().all(|c| c.is_ascii_digit()))
+                .unwrap_or(""),
+        )
+        .await
+    } else {
+        probe::run(&t.host, t.port, &t.group).await
+    };
     sh.paused.store(false, Ordering::Relaxed);
     no_store(Json(r).into_response())
 }
@@ -439,17 +522,37 @@ async fn connect(State(sh): State<Arc<Shared>>, Json(req): Json<ConnectReq>) -> 
             Some(s) => Some(s),
             None => return reject(StatusCode::NOT_FOUND, "Anlage nicht gefunden."),
         },
-        None => sh.target.read().unwrap().clone().and_then(|t| sh.systems.get(&t.id)).or_else(|| sh.systems.first()),
+        None => sh
+            .target
+            .read()
+            .unwrap()
+            .clone()
+            .and_then(|t| sh.systems.get(&t.id))
+            .or_else(|| sh.systems.first()),
     };
     let Some(sys) = chosen else {
-        return reject(StatusCode::SERVICE_UNAVAILABLE, "Noch keine Anlage angelegt. Lege zuerst eine an.");
+        return reject(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Noch keine Anlage angelegt. Lege zuerst eine an.",
+        );
     };
-    if !wanted(&sh) || sh.target.read().unwrap().as_ref().map(|t| t.id != sys.id).unwrap_or(true) {
+    if !wanted(&sh)
+        || sh
+            .target
+            .read()
+            .unwrap()
+            .as_ref()
+            .map(|t| t.id != sys.id)
+            .unwrap_or(true)
+    {
         println!("connection requested for {}", sys.name);
     }
     *sh.target.write().unwrap() = Some(sys);
     touch(&sh);
-    no_store(Json(json!({ "ok": true, "expiresAt": sh.wanted_until.load(Ordering::Relaxed) })).into_response())
+    no_store(
+        Json(json!({ "ok": true, "expiresAt": sh.wanted_until.load(Ordering::Relaxed) }))
+            .into_response(),
+    )
 }
 
 /// Let go of the panel so someone else (e.g. the original app) can use the keypad.
@@ -461,8 +564,15 @@ async fn disconnect(State(sh): State<Arc<Shared>>, Json(_): Json<serde_json::Val
 // ---- managing the list of systems (names/addresses only, never touches the panel)
 
 async fn systems_list(State(sh): State<Arc<Shared>>) -> Response {
-    let active = if wanted(&sh) { sh.target.read().unwrap().as_ref().map(|t| t.id.clone()) } else { None };
-    no_store(Json(json!({ "ok": true, "systems": sh.systems.list(), "activeId": active })).into_response())
+    let active = if wanted(&sh) {
+        sh.target.read().unwrap().as_ref().map(|t| t.id.clone())
+    } else {
+        None
+    };
+    no_store(
+        Json(json!({ "ok": true, "systems": sh.systems.list(), "activeId": active }))
+            .into_response(),
+    )
 }
 
 async fn systems_save(State(sh): State<Arc<Shared>>, Json(input): Json<SystemInput>) -> Response {
@@ -489,7 +599,13 @@ struct IdReq {
 async fn systems_delete(State(sh): State<Arc<Shared>>, Json(req): Json<IdReq>) -> Response {
     match sh.systems.delete(&req.id) {
         Ok(()) => {
-            let was_target = sh.target.read().unwrap().as_ref().map(|t| t.id == req.id).unwrap_or(false);
+            let was_target = sh
+                .target
+                .read()
+                .unwrap()
+                .as_ref()
+                .map(|t| t.id == req.id)
+                .unwrap_or(false);
             if was_target {
                 sh.wanted_until.store(0, Ordering::Relaxed);
                 *sh.target.write().unwrap() = None;
@@ -528,10 +644,16 @@ fn reject(code: StatusCode, msg: &str) -> Response {
 /// (a cross-site form post can't trigger it) 5) every press is logged.
 async fn key(State(sh): State<Arc<Shared>>, Json(req): Json<KeyReq>) -> Response {
     if !sh.settings.control() {
-        return reject(StatusCode::FORBIDDEN, "Steuern ist in den Einstellungen ausgeschaltet.");
+        return reject(
+            StatusCode::FORBIDDEN,
+            "Steuern ist in den Einstellungen ausgeschaltet.",
+        );
     }
     if !wanted(&sh) || !sh.snap.read().unwrap().connected {
-        return reject(StatusCode::SERVICE_UNAVAILABLE, "Keine Verbindung zur Anlage.");
+        return reject(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Keine Verbindung zur Anlage.",
+        );
     }
     touch(&sh); // a key press counts as activity
     let cmd = match (req.key.as_deref(), req.taster) {
@@ -549,10 +671,18 @@ async fn key(State(sh): State<Arc<Shared>>, Json(req): Json<KeyReq>) -> Response
             }
             None => return reject(StatusCode::BAD_REQUEST, "Unbekannter Taster."),
         },
-        _ => return reject(StatusCode::BAD_REQUEST, "Genau ein Feld 'key' oder 'taster' angeben."),
+        _ => {
+            return reject(
+                StatusCode::BAD_REQUEST,
+                "Genau ein Feld 'key' oder 'taster' angeben.",
+            )
+        }
     };
     if sh.tx.send(cmd).is_err() {
-        return reject(StatusCode::INTERNAL_SERVER_ERROR, "Befehlswarteschlange nicht verfügbar.");
+        return reject(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Befehlswarteschlange nicht verfügbar.",
+        );
     }
     no_store(Json(json!({ "ok": true })).into_response())
 }
@@ -590,14 +720,25 @@ struct SettingsReq {
 async fn settings_save(State(sh): State<Arc<Shared>>, Json(req): Json<SettingsReq>) -> Response {
     if let Some(on) = req.control {
         if on && !sh.settings.control() && sh.settings.auth_required() {
-            let ok = req.password.as_deref().map(|p| sh.settings.check_password(p)).unwrap_or(false);
+            let ok = req
+                .password
+                .as_deref()
+                .map(|p| sh.settings.check_password(p))
+                .unwrap_or(false);
             if !ok {
                 slow_down(&sh).await;
                 return reject(StatusCode::FORBIDDEN, "Passwort falsch.");
             }
         }
         if on != sh.settings.control() {
-            println!("{}", if on { "WARNUNG: Steuern wurde in der Oberfläche eingeschaltet." } else { "Steuern wurde in der Oberfläche ausgeschaltet (nur lesen)." });
+            println!(
+                "{}",
+                if on {
+                    "WARNUNG: Steuern wurde in der Oberfläche eingeschaltet."
+                } else {
+                    "Steuern wurde in der Oberfläche ausgeschaltet (nur lesen)."
+                }
+            );
         }
         if let Err(e) = sh.settings.set_control(on) {
             return reject(StatusCode::INTERNAL_SERVER_ERROR, &e);
@@ -615,19 +756,31 @@ async fn settings_save(State(sh): State<Arc<Shared>>, Json(req): Json<SettingsRe
 // ---------------------------------------------------------------- login (standalone only)
 
 fn cookie_token(headers: &HeaderMap) -> Option<String> {
-    headers.get_all(header::COOKIE).iter().filter_map(|v| v.to_str().ok()).flat_map(|v| v.split(';')).find_map(|c| {
-        let (k, v) = c.trim().split_once('=')?;
-        (k == COOKIE).then(|| v.to_string())
-    })
+    headers
+        .get_all(header::COOKIE)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .flat_map(|v| v.split(';'))
+        .find_map(|c| {
+            let (k, v) = c.trim().split_once('=')?;
+            (k == COOKIE).then(|| v.to_string())
+        })
 }
 
 fn logged_in(sh: &Shared, headers: &HeaderMap) -> bool {
-    !sh.settings.auth_required() || cookie_token(headers).map(|t| sh.settings.verify_token(&t, now_s())).unwrap_or(false)
+    !sh.settings.auth_required()
+        || cookie_token(headers)
+            .map(|t| sh.settings.verify_token(&t, now_s()))
+            .unwrap_or(false)
 }
 
 /// `Secure` only when the browser reached us over HTTPS (e.g. Cloudflare Tunnel, reverse proxy).
 fn https(headers: &HeaderMap) -> bool {
-    headers.get("x-forwarded-proto").and_then(|v| v.to_str().ok()).map(|v| v.eq_ignore_ascii_case("https")).unwrap_or(false)
+    headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.eq_ignore_ascii_case("https"))
+        .unwrap_or(false)
 }
 
 fn with_cookie(mut r: Response, headers: &HeaderMap, value: &str, max_age: u64) -> Response {
@@ -666,7 +819,11 @@ struct LoginReq {
     password: String,
 }
 
-async fn login(State(sh): State<Arc<Shared>>, headers: HeaderMap, Json(req): Json<LoginReq>) -> Response {
+async fn login(
+    State(sh): State<Arc<Shared>>,
+    headers: HeaderMap,
+    Json(req): Json<LoginReq>,
+) -> Response {
     if !sh.settings.auth_required() {
         return no_store(Json(json!({ "ok": true })).into_response());
     }
@@ -676,11 +833,21 @@ async fn login(State(sh): State<Arc<Shared>>, headers: HeaderMap, Json(req): Jso
     }
     sh.login_fails.store(0, Ordering::Relaxed);
     let token = sh.settings.issue_token(now_s());
-    with_cookie(no_store(Json(json!({ "ok": true })).into_response()), &headers, &token, settings::SESSION_DAYS * 86_400)
+    with_cookie(
+        no_store(Json(json!({ "ok": true })).into_response()),
+        &headers,
+        &token,
+        settings::SESSION_DAYS * 86_400,
+    )
 }
 
 async fn logout(headers: HeaderMap, Json(_): Json<serde_json::Value>) -> Response {
-    with_cookie(no_store(Json(json!({ "ok": true })).into_response()), &headers, "", 0)
+    with_cookie(
+        no_store(Json(json!({ "ok": true })).into_response()),
+        &headers,
+        "",
+        0,
+    )
 }
 
 #[derive(Deserialize)]
@@ -691,11 +858,21 @@ struct PasswordReq {
     new: Option<String>,
 }
 
-async fn set_password(State(sh): State<Arc<Shared>>, headers: HeaderMap, Json(req): Json<PasswordReq>) -> Response {
+async fn set_password(
+    State(sh): State<Arc<Shared>>,
+    headers: HeaderMap,
+    Json(req): Json<PasswordReq>,
+) -> Response {
     if sh.settings.mode != Mode::Standalone {
         return reject(StatusCode::BAD_REQUEST, "In Home Assistant meldet dich Home Assistant an, ein eigenes Passwort ist nicht nötig.");
     }
-    if sh.settings.has_password() && !req.current.as_deref().map(|p| sh.settings.check_password(p)).unwrap_or(false) {
+    if sh.settings.has_password()
+        && !req
+            .current
+            .as_deref()
+            .map(|p| sh.settings.check_password(p))
+            .unwrap_or(false)
+    {
         slow_down(&sh).await;
         return reject(StatusCode::FORBIDDEN, "Aktuelles Passwort falsch.");
     }
@@ -704,11 +881,25 @@ async fn set_password(State(sh): State<Arc<Shared>>, headers: HeaderMap, Json(re
         return reject(StatusCode::BAD_REQUEST, &e);
     }
     sh.login_fails.store(0, Ordering::Relaxed);
-    println!("{}", if new.is_some() { "login password set" } else { "login password removed" });
-    let r = no_store(Json(json!({ "ok": true, "authRequired": sh.settings.auth_required() })).into_response());
+    println!(
+        "{}",
+        if new.is_some() {
+            "login password set"
+        } else {
+            "login password removed"
+        }
+    );
+    let r = no_store(
+        Json(json!({ "ok": true, "authRequired": sh.settings.auth_required() })).into_response(),
+    );
     match new {
         // the cookie key changed: give this browser a fresh login so it stays signed in
-        Some(_) => with_cookie(r, &headers, &sh.settings.issue_token(now_s()), settings::SESSION_DAYS * 86_400),
+        Some(_) => with_cookie(
+            r,
+            &headers,
+            &sh.settings.issue_token(now_s()),
+            settings::SESSION_DAYS * 86_400,
+        ),
         None => with_cookie(r, &headers, "", 0),
     }
 }
@@ -716,7 +907,11 @@ async fn set_password(State(sh): State<Arc<Shared>>, headers: HeaderMap, Json(re
 /// Every `/api/` route except health and login needs a valid cookie once a password is set.
 async fn require_login(State(sh): State<Arc<Shared>>, req: Request, next: Next) -> Response {
     let p = req.uri().path();
-    let open = !p.starts_with("/api/") || p == "/api/health" || p == "/api/auth/status" || p == "/api/auth/login" || p == "/api/auth/logout";
+    let open = !p.starts_with("/api/")
+        || p == "/api/health"
+        || p == "/api/auth/status"
+        || p == "/api/auth/login"
+        || p == "/api/auth/logout";
     if open || logged_in(&sh, req.headers()) {
         next.run(req).await
     } else {
@@ -728,8 +923,10 @@ async fn require_login(State(sh): State<Arc<Shared>>, req: Request, next: Next) 
 
 fn asset(ct: &'static str, body: impl IntoResponse, cache: &'static str) -> Response {
     let mut r = body.into_response();
-    r.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static(ct));
-    r.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static(cache));
+    r.headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_static(ct));
+    r.headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static(cache));
     r
 }
 
@@ -768,12 +965,21 @@ async fn main() {
     if let Err(e) = std::fs::create_dir_all(&data) {
         eprintln!("data folder {data} not usable: {e}");
     }
-    let settings = Settings::load(&format!("{data}/settings.json"), mode, &opts, options_present);
+    let settings = Settings::load(
+        &format!("{data}/settings.json"),
+        mode,
+        &opts,
+        options_present,
+    );
     println!(
         "ema-panel {VERSION} · mode={mode:?} data={data} control={} poll={}ms login={}",
         settings.control(),
         settings.poll_ms(),
-        if settings.auth_required() { "on" } else { "off" }
+        if settings.auth_required() {
+            "on"
+        } else {
+            "off"
+        }
     );
     if settings.control() {
         println!("WARNUNG: Steuern ist aktiviert – Tastendrücke werden an die Anlage gesendet.");
@@ -792,12 +998,19 @@ async fn main() {
         port: opts.panel_port,
         group: opts.user_group.clone(),
     });
-    let store = systems::Store::load(&std::env::var("SYSTEMS_PATH").unwrap_or_else(|_| format!("{data}/systems.json")), seed);
+    let store = systems::Store::load(
+        &std::env::var("SYSTEMS_PATH").unwrap_or_else(|_| format!("{data}/systems.json")),
+        seed,
+    );
     println!("{} system(s) configured", store.list().len());
 
     let (tx, rx) = mpsc::unbounded_channel();
     let shared = Arc::new(Shared {
-        snap: RwLock::new(Snapshot { mode: "plaintext", control: settings.control(), ..Default::default() }),
+        snap: RwLock::new(Snapshot {
+            mode: "plaintext",
+            control: settings.control(),
+            ..Default::default()
+        }),
         tx,
         settings,
         login_fails: AtomicU64::new(0),
@@ -834,11 +1047,19 @@ async fn main() {
         .route("/api/auth/login", post(login))
         .route("/api/auth/logout", post(logout))
         .route("/api/auth/password", post(set_password))
-        .layer(middleware::from_fn_with_state(shared.clone(), require_login))
+        .layer(middleware::from_fn_with_state(
+            shared.clone(),
+            require_login,
+        ))
         .with_state(shared);
 
-    let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8099);
-    let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await.expect("bind");
+    let port: u16 = std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(8099);
+    let listener = tokio::net::TcpListener::bind(("0.0.0.0", port))
+        .await
+        .expect("bind");
     println!("listening on :{port}");
     axum::serve(listener, app)
         .with_graceful_shutdown(async {
@@ -847,7 +1068,9 @@ async fn main() {
             };
             #[cfg(unix)]
             let term = async {
-                if let Ok(mut s) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                if let Ok(mut s) =
+                    tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                {
                     s.recv().await;
                 }
             };
