@@ -1,5 +1,6 @@
-//! Add-on options. In Home Assistant they live in `/data/options.json`; for local
-//! development they can come from environment variables instead.
+//! Start-up options. In Home Assistant they live in `/data/options.json`; outside HA they can
+//! come from (optional) environment variables. In standalone Docker none are needed: everything
+//! is set up in the web UI and stored in the data folder.
 
 use serde::Deserialize;
 
@@ -28,9 +29,18 @@ fn default_poll() -> u64 {
     1000
 }
 
+/// Folder for persistent files (`systems.json`, `settings.json`). `DATA_DIR`, default `/data`.
+pub fn data_dir() -> String {
+    std::env::var("DATA_DIR").ok().filter(|v| !v.is_empty()).unwrap_or_else(|| "/data".into())
+}
+
+pub fn options_path() -> String {
+    std::env::var("OPTIONS_PATH").unwrap_or_else(|_| format!("{}/options.json", data_dir()))
+}
+
 impl Options {
     pub fn load() -> Options {
-        let path = std::env::var("OPTIONS_PATH").unwrap_or_else(|_| "/data/options.json".into());
+        let path = options_path();
         let mut o = match std::fs::read_to_string(&path) {
             Ok(s) => serde_json::from_str::<Options>(&s).unwrap_or_else(|e| {
                 eprintln!("options.json unreadable ({e}); falling back to defaults");

@@ -1,0 +1,30 @@
+# Standalone Alarm Keypad (outside Home Assistant).
+#   docker compose up -d   ->   open http://<host>:8099 and set everything up in the browser.
+# No config files or variables needed; systems, "allow control" and the optional password
+# are stored in the "ema-data" volume.
+services:
+  alarm-keypad:
+    image: ghcr.io/pxljake/ema-webpanel:latest
+    container_name: alarm-keypad
+    restart: unless-stopped
+    ports:
+      - "8099:8099"
+    volumes:
+      - ema-data:/data
+    # Optional, all have defaults:
+    # environment:
+    #   - TZ=Europe/Berlin
+    #   - PORT=8099
+
+  # Optional: reach it from outside through a Cloudflare Tunnel (no open port on the router).
+  # Create the tunnel in the Cloudflare Zero Trust dashboard, point its public hostname to
+  # http://alarm-keypad:8099 and put a Cloudflare Access policy in front of it.
+  # cloudflared:
+  #   image: cloudflare/cloudflared:latest
+  #   restart: unless-stopped
+  #   command: tunnel --no-autoupdate run
+  #   environment:
+  #     - TUNNEL_TOKEN=<token from the Cloudflare dashboard>
+
+volumes:
+  ema-data:

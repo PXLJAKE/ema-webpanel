@@ -10,7 +10,7 @@ configuration:
     description: Dieselbe Gruppennummer wie in der Anlagen-Einstellung der Original-App (meist 1).
   control_enabled:
     name: Steuern erlauben
-    description: Aus = nur Ansicht (empfohlen zum Testen). An = Tasten, EIN/AUS und Taster senden echte Befehle an die Anlage.
+    description: Aus = nur Ansicht (empfohlen zum Testen). An = Tasten, EIN/AUS und Taster senden echte Befehle. Lässt sich auch in der App unter ⚙ Einstellungen umschalten; eine Änderung hier gilt ab dem nächsten Start des Add-ons.
   poll_interval_ms:
     name: Abfrage-Intervall (ms)
-    description: Wie oft der Zustand abgefragt wird. 1000 ist ein guter Wert.
+    description: Wie oft der Zustand abgefragt wird. 1000 ist ein guter Wert. Auch in der App einstellbar; eine Änderung hier gilt ab dem nächsten Start.

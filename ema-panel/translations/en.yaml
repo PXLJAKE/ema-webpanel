@@ -10,7 +10,7 @@ configuration:
     description: The same group number as in the panel entry of the original app (usually 1).
   control_enabled:
     name: Allow control
-    description: Off = view only (recommended while testing). On = keys, arm/disarm and buttons send real commands to the panel.
+    description: Off = view only (recommended while testing). On = keys, arm/disarm and buttons send real commands to the panel. Can also be switched in the app under ⚙ settings; a change here applies from the next add-on start.
   poll_interval_ms:
     name: Poll interval (ms)
-    description: How often the state is read. 1000 is a good value.
+    description: How often the state is read. 1000 is a good value. Also adjustable in the app; a change here applies from the next start.

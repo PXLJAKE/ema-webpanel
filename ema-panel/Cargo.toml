@@ -1,8 +1,8 @@
 [package]
 name = "ema-panel"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
-description = "Home Assistant add-on: modern web keypad for an intrusion alarm panel (unofficial)"
+description = "Modern web keypad for an intrusion alarm panel (unofficial). Home Assistant add-on or standalone Docker container."
 license = "MIT"
 
 [dependencies]
@@ -12,6 +12,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", default-features = false }
 roxmltree = "0.20"
+argon2 = { version = "0.5", default-features = false, features = ["alloc", "password-hash"] }
+hmac = "0.12"
+sha2 = "0.10"
+getrandom = "0.2"
 
 [profile.release]
 opt-level = "s"

@@ -10,11 +10,15 @@ Modern web keypad for a compatible intrusion alarm panel, shown in the Home Assi
    **User group** (the same number as in the original app).
 2. Start the add-on and open **Alarmanlage** in the sidebar.
 3. Check that the LCD shows the panel text and the header says **live**.
-4. Only when everything looks right: turn on **Allow control** and restart the add-on.
+4. Only when everything looks right: turn on **Steuern erlauben** in the app under ⚙
+   (or the **Allow control** option, applied on the next start).
+
+More systems, also remote ones, are added in the app under **Anlagen**. App settings win until
+you change an add-on option; a changed option is applied on the next start.
 
 ## View only vs. control
 
-With **Allow control** off, the keypad and buttons only show a hint. Nothing is ever sent.
+With control off, the keypad and buttons only show a hint. Nothing is ever sent.
 With it on, digits and navigation send immediately; **EIN**, **AUS** and every function button
 ask for confirmation first. The add-on log lists every command that was sent.
 
