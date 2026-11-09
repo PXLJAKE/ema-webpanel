@@ -41,6 +41,11 @@ struct Snapshot {
     locked: bool,
     line1: String,
     line2: String,
+    /// per-cell LCD content: a string (character) or a number (custom glyph index)
+    cells1: Vec<panel::Cell>,
+    cells2: Vec<panel::Cell>,
+    /// 5x8 bitmaps of the custom glyphs (rows as bytes), from ui_12540_sz
+    glyphs: Vec<Vec<u8>>,
     revision: Option<String>,
     cursor_pos: Option<String>,
     cursor_blink: Option<String>,
@@ -121,6 +126,11 @@ async fn run_poller(shared: Arc<Shared>, mut rx: mpsc::UnboundedReceiver<Cmd>) {
                         let mut s = shared.snap.write().unwrap();
                         s.raw.init = clip(&xml);
                         s.session_id = Some(info.session_id.clone());
+                    }
+                    // like the original app: fetch the custom glyph bitmaps once per session
+                    match panel.read_signs().await {
+                        Ok(g) => shared.snap.write().unwrap().glyphs = g,
+                        Err(e) => eprintln!("glyphs not available: {e}"),
                     }
                     init = Some(info);
                     errors = 0;
@@ -221,6 +231,8 @@ fn apply(
         s.locked = c.locked;
         s.line1 = c.line1;
         s.line2 = c.line2;
+        s.cells1 = c.cells1;
+        s.cells2 = c.cells2;
         s.cursor_pos = c.cursor_pos;
         s.cursor_blink = c.cursor_blink;
         if c.revision.is_some() {
