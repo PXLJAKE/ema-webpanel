@@ -79,7 +79,7 @@ async fn sequence(addr: &str, group: &str, label: &str, steps: &[Step]) -> Value
     let init = raw_get(addr, &request("ui_init.xml", group, "00", "FFFF", addr, "close"), Duration::from_secs(6)).await;
     let body = init.get("body").and_then(|b| b.as_str()).unwrap_or("");
     let (sid, mut cnt) = match (tag(body, "Session_ID"), tag(body, "Counter")) {
-        (Some(a), Some(b)) => (a.to_string(), b.to_string()),
+        (Some(a), Some(b)) => (a.to_string(), crate::panel::next_counter(b)),
         _ => return json!({ "sequence": label, "init": init }),
     };
     log.push(json!({ "step": "ui_init.xml", "sid": sid, "cnt": cnt }));
@@ -93,7 +93,7 @@ async fn sequence(addr: &str, group: &str, label: &str, steps: &[Step]) -> Value
         if ok {
             let b = r.get("body").and_then(|b| b.as_str()).unwrap_or("");
             if let Some(c) = tag(b, "Counter") {
-                cnt = c.to_string();
+                cnt = crate::panel::next_counter(c);
             }
             entry["head"] = json!(r.get("head").and_then(|h| h.as_str()).unwrap_or("").lines().next().unwrap_or(""));
             entry["body"] = json!(b.chars().take(260).collect::<String>());

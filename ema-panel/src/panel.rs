@@ -265,6 +265,16 @@ pub fn led_label(tag: &str) -> String {
 
 // ---------------------------------------------------------------- transport
 
+/// The panel numbers its answers; the next request must carry the answered counter plus one
+/// (4 hex digits, upper case). `FFFF` is kept as is. Sending the answered counter unchanged
+/// makes the panel close the connection without any response.
+pub fn next_counter(answered: &str) -> String {
+    match u32::from_str_radix(answered.trim(), 16) {
+        Ok(v) if v != 0xFFFF => format!("{:04X}", v + 1),
+        _ => answered.trim().to_uppercase(),
+    }
+}
+
 pub struct Panel {
     http: reqwest::Client,
     base: String,
@@ -326,7 +336,7 @@ impl Panel {
         let (_, xml) = self.get("ui_init.xml", "").await?;
         let info = parse_init(&xml)?;
         self.sid = info.session_id.clone();
-        self.cnt = info.counter.clone();
+        self.cnt = next_counter(&info.counter);
         Ok((info, xml))
     }
 
@@ -334,7 +344,7 @@ impl Panel {
     pub async fn read_io(&mut self, taster_cmd: &str) -> Result<(IoInfo, String), String> {
         let (_, xml) = self.get("ui_io.xml", taster_cmd).await?;
         let info = parse_io(&xml)?;
-        self.cnt = info.counter.clone();
+        self.cnt = next_counter(&info.counter);
         Ok((info, xml))
     }
 
@@ -342,7 +352,7 @@ impl Panel {
     pub async fn read_control(&mut self, key_cmd: &str) -> Result<(ControlInfo, String), String> {
         let (_, xml) = self.get("ui_12540.xml", key_cmd).await?;
         let info = parse_control(&xml)?;
-        self.cnt = info.counter.clone();
+        self.cnt = next_counter(&info.counter);
         Ok((info, xml))
     }
 }
@@ -372,6 +382,15 @@ mod tests {
     use super::*;
 
     const INIT: &str = "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\n<ui_init>\n <Init>\n  <Counter>0001</Counter>\n  <Session_ID>AB12</Session_ID>\n </Init>\n <LED_Page>\n  <L1>Alarm</L1>\n  <L2>Strom</L2>\n </LED_Page>\n <Button_Page>\n  <Page_12540>On</Page_12540>\n  <Page_12540_Revision>On</Page_12540_Revision>\n  <Page_Button>On</Page_Button>\n  <Page_LED>Off</Page_LED>\n  <B1>Garage</B1>\n  <B2>Licht</B2>\n </Button_Page>\n</ui_init>";
+
+    #[test]
+    fn counter_is_answered_plus_one() {
+        assert_eq!(next_counter("2410"), "2411");
+        assert_eq!(next_counter("00FF"), "0100");
+        assert_eq!(next_counter("0009"), "000A");
+        assert_eq!(next_counter("FFFF"), "FFFF");
+        assert_eq!(next_counter("9abc"), "9ABD");
+    }
 
     #[test]
     fn init_parses() {
