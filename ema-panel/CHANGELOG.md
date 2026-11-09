@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.1
+- Desktop and tablet: the app now uses the full width, the navigation sits at the left edge instead of floating in the middle. Systems are laid out in as many columns as fit.
+- iPhone (Home Assistant companion app): fixed the broken top. Inside the Home Assistant frame the notch inset is now ignored (HA already handles it), so there is no empty block and the header no longer covers the display. The header is no longer sticky with an offset.
+
 ## 0.7.0
 - English and German. New option `language` (`auto` by default): `auto` follows Home Assistant (the HA profile language in the app, the HA system language for entity names), anything other than German becomes English; `en` or `de` fixes it. Each device can also choose in the app under ⚙ → Language. Standalone Docker follows the browser (or `UI_LANGUAGE`).
 - Names that come from the panel (buttons, LEDs, LCD, system names) are never translated.
