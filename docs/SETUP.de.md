@@ -137,8 +137,8 @@ Reiter **Anlagen** (links unten am Handy, links in der Leiste am PC) → **＋ A
 | Adresse | IP oder Hostname, von außen z. B. `name.myfritz.net` |
 | Port | meist `8016` |
 | Gruppe | Benutzergruppe für das Bedienteil, wie in der Original-App |
-| AES-Schlüssel | nur wenn die Anlage einen hat, sonst leer. Beim Bearbeiten: leer = gespeicherten behalten, `-` = Schlüssel löschen. Der Schlüssel wird nie an den Browser zurückgeschickt. |
-| Gruppe für HA | Benutzergruppe der Home-Assistant-Anbindung (Abschnitt 7). „wie oben“ = dieselbe Gruppe. |
+| AES-Schlüssel *(unter Erweitert)* | nur wenn die Anlage einen hat, sonst leer. Beim Bearbeiten: leer = gespeicherten behalten, `-` = Schlüssel löschen. Der Schlüssel wird nie an den Browser zurückgeschickt. |
+| Gruppe für HA *(unter Erweitert)* | optionale Zusatzsicherung: Benutzergruppe der Home-Assistant-Anbindung (Abschnitt 7). „wie oben“ = dieselbe Gruppe. |
 
 Dann die Anlage antippen und **Verbinden**. Oben steht **live** mit einem Countdown.
 
@@ -172,16 +172,17 @@ Das Add-on hält dafür eine **eigene, dauerhafte Verbindung**, die **nur die Ta
 LED-Seite** liest. Das ist an einer echten Anlage geprüft: Diese Verbindung belegt das
 Bedienteil **nicht**, es bleibt für dich, die Original-App und das echte Bedienteil frei.
 
-### 7.2 Eigene Benutzergruppe (empfohlen)
+### 7.2 Eigene Benutzergruppe (optional)
 
-Am saubersten bekommt die HA-Verbindung eine **eigene Benutzergruppe** in der Anlage, der nur
+**Nötig ist das nicht:** Die HA-Verbindung belegt das Bedienteil nie, alles funktioniert auch mit
+der normalen Gruppe. Als zusätzliche Absicherung bekommt die HA-Verbindung eine **eigene Benutzergruppe** in der Anlage, der nur
 **Taster und LEDs** freigegeben sind, ohne Bedienteil. Dann kann Home Assistant das Bedienteil
 schon von der Anlage aus nicht bedienen, und du legst dort auch fest, welche Taster HA schalten
 darf. Wie man Gruppen einrichtet, hängt von deiner Anlage ab (Errichter-Programmierung der
 Übertragungseinheit).
 
 Beispiel: Hauptgruppe `3` für das Bedienteil, Gruppe `2` nur mit Tastern für HA. Dann bei der
-Anlage **Gruppe = 3** und **Gruppe für HA = 2** eintragen. Ohne eigene Gruppe funktioniert es mit
+Anlage **Gruppe = 3** und unter **Erweitert** **Gruppe für HA = 2** eintragen. Ohne eigene Gruppe funktioniert es mit
 „wie oben“ genauso, nur ohne diese zweite Sicherung.
 
 ### 7.3 Einschalten

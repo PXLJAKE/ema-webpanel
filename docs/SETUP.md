@@ -131,8 +131,8 @@ the app is then a second layer. A VPN (WireGuard, Tailscale, router VPN) works t
 | Address | IP or host name, from outside e.g. `name.myfritz.net` |
 | Port | usually `8016` |
 | Group | user group for the keypad, as in the original app |
-| AES key | only if the panel has one, otherwise leave empty. When editing: empty = keep the saved key, `-` = remove it. The key is never sent back to the browser. |
-| Group for HA | user group for the Home Assistant entities (section 7). "same as above" = the same group. |
+| AES key *(under Advanced)* | only if the panel has one, otherwise leave empty. When editing: empty = keep the saved key, `-` = remove it. The key is never sent back to the browser. |
+| Group for HA *(under Advanced)* | optional extra safeguard: user group for the Home Assistant entities (section 7). "as above" = the same group. |
 
 Then tap the system and **Connect**. The header shows **live** with a countdown.
 
@@ -166,16 +166,17 @@ The add-on keeps a **separate, permanent connection** for this that **only reads
 LED page**. This was checked on a real panel: the connection does **not** take the keypad, so it
 stays free for you, the original app and the real keypad.
 
-### 7.2 A user group of its own (recommended)
+### 7.2 A user group of its own (optional)
 
-Ideally the HA connection gets **its own user group** in the panel that is only allowed
+You do **not** need this: the HA connection never takes the keypad, so everything works with
+the normal group. If you want an extra safeguard, the HA connection can get **its own user group** in the panel that is only allowed
 **buttons and LEDs**, without the keypad. Then Home Assistant cannot operate the keypad, enforced
 by the panel itself, and you decide there which buttons HA may press. How to set up groups
 depends on your panel (installer programming of the transmitter).
 
 Example: main group `3` for the keypad, group `2` with only buttons for HA. Then enter
-**Group = 3** and **Group for HA = 2** for the system. Without a group of its own it works the
-same with "same as above", just without this second safeguard.
+**Group = 3** and, under **Advanced**, **Group for HA = 2** for the system. Without a group of its own it works the
+same with "as above", just without this second safeguard.
 
 ### 7.3 Switch it on
 

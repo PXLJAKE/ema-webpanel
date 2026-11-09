@@ -40,8 +40,9 @@ system appears under *Settings → Devices & services → MQTT* with binary sens
 Blinking counts as on; the attributes carry `color` and `blink`.
 
 The add-on keeps its own background connection for this that only reads the button/LED page,
-so the keypad stays free (checked on a real panel). Best give it a user group of its own that
-the panel only allows buttons and LEDs: set **Group for HA** when you add or edit a system.
+so the keypad stays free (checked on a real panel). A user group of its own is not needed. As an
+optional extra safeguard you can give it a group that the panel only allows buttons and LEDs:
+**Group for HA** under **Advanced** when you add or edit a system.
 The HA entities belong to the first system in the list. The status lamps of the keypad page
 (operation, intrusion, tamper, ...) are only known while the keypad is open in the app; the
 rest of the time they show as unavailable.

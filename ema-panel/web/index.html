@@ -82,6 +82,9 @@ button{font-family:inherit;color:inherit;cursor:pointer}
 .fld.two{display:flex;gap:10px}.fld.two>div{flex:1}
 .formerr{color:var(--alarm);font-size:13px;text-align:left;min-height:18px;margin:0 0 8px}
 .modal p.hint{font-size:12px;margin:0 0 10px}
+.modal details.adv{text-align:left;margin:0 0 12px;border:1px solid var(--border);border-radius:10px;padding:8px 12px}
+.modal details.adv summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--muted);padding:2px 0}
+.modal details.adv[open] summary{margin-bottom:10px}
 .addsys{width:100%;margin:2px 0 14px;padding:12px;text-align:center}
 .badge.live{color:var(--ok);background:var(--ok-soft);border-color:transparent}
 .sys-card .edit{display:none;width:34px;height:34px;border-radius:9px;border:1px solid var(--border);background:var(--surface-2);place-items:center;font-size:15px;flex:none}
@@ -436,8 +439,10 @@ button{font-family:inherit;color:inherit;cursor:pointer}
     <div class="fld"><label for="fName">Name</label><input id="fName" maxlength="40" placeholder="z. B. Ferienhaus" autocomplete="off"></div>
     <div class="fld"><label for="fHost">Adresse</label><input id="fHost" placeholder="192.168.178.99 oder name.myfritz.net" autocapitalize="off" autocomplete="off" spellcheck="false" inputmode="url"></div>
     <div class="fld two"><div><label for="fPort">Port</label><input id="fPort" inputmode="numeric" value="8016"></div><div><label for="fGroup">Gruppe</label><select id="fGroup"><option>1</option><option>2</option><option>3</option><option>4</option></select></div></div>
+    <details class="adv" id="fAdv"><summary>Erweitert</summary>
     <div class="fld two"><div><label for="fKey">AES-Schlüssel</label><input id="fKey" type="password" placeholder="leer = ohne" autocapitalize="off" autocomplete="off" spellcheck="false"></div><div><label for="fHaGroup">Gruppe für HA</label><select id="fHaGroup"><option value="">wie oben</option><option>1</option><option>2</option><option>3</option><option>4</option></select></div></div>
-    <p class="hint">AES-Schlüssel nur eintragen, wenn die Anlage einen hat (Hex, wie in der Original-App). „Gruppe für HA“ nutzt die Home-Assistant-Anbindung, am besten eine Gruppe nur mit Tastern und LEDs.</p>
+    <p class="hint">Beides ist optional. AES-Schlüssel nur eintragen, wenn die Anlage einen hat (Hex, wie in der Original-App). „Gruppe für HA“ ist eine zusätzliche Absicherung: eine eigene Benutzergruppe für die Home-Assistant-Entitäten, die in der Anlage nur Taster und LEDs darf. Nötig ist sie nicht.</p>
+    </details>
     <p class="hint">Von außen: MyFRITZ-/DynDNS-Name und den am Router freigegebenen Port eintragen. Die Anlage selbst hat keinen Passwortschutz, gib den Port nur gezielt frei.</p>
     <div class="formerr" id="fErr"></div>
     <div class="row2"><button class="btn-ghost" id="sysCancel">Abbrechen</button><button class="btn-primary" id="sysSave">Speichern</button></div>
@@ -565,9 +570,9 @@ const I18N_EN={
 'Alle anderen Geräte werden dabei abgemeldet.':'All other devices will be signed out.','Danach ist zum Öffnen eine Anmeldung nötig. Dieses Gerät bleibt angemeldet.':'After that, signing in is required to open the page. This device stays signed in.',
 'Danach kann jeder, der die Seite erreicht, die Anlage sehen.':'After that, anyone who can reach the page can see the panel.','Passwort bestätigen':'Confirm password','Zum Einschalten der Steuerung bitte das Passwort eingeben.':'Enter the password to switch on control.','Einschalten':'Switch on',
 // system editor
-'Name':'Name','z. B. Ferienhaus':'e.g. Holiday home','Adresse':'Address','192.168.178.99 oder name.myfritz.net':'192.168.178.99 or name.myfritz.net','AES-Schlüssel':'AES key','leer = ohne':'empty = none','Gruppe für HA':'Group for HA','wie oben':'same as above',
+'Name':'Name','z. B. Ferienhaus':'e.g. Holiday home','Adresse':'Address','192.168.178.99 oder name.myfritz.net':'192.168.178.99 or name.myfritz.net','AES-Schlüssel':'AES key','leer = ohne':'empty = none','Gruppe für HA':'Group for HA','Erweitert':'Advanced','wie oben':'as above',
 'gespeichert (leer = behalten, - = löschen)':'saved (empty = keep, - = remove)',
-'AES-Schlüssel nur eintragen, wenn die Anlage einen hat (Hex, wie in der Original-App). „Gruppe für HA“ nutzt die Home-Assistant-Anbindung, am besten eine Gruppe nur mit Tastern und LEDs.':'Only enter an AES key if the panel uses one (hex, as in the original app). “Group for HA” is used for the Home Assistant entities, ideally a group with only buttons and LEDs.',
+'Beides ist optional. AES-Schlüssel nur eintragen, wenn die Anlage einen hat (Hex, wie in der Original-App). „Gruppe für HA“ ist eine zusätzliche Absicherung: eine eigene Benutzergruppe für die Home-Assistant-Entitäten, die in der Anlage nur Taster und LEDs darf. Nötig ist sie nicht.':'Both are optional. Only enter an AES key if the panel uses one (hex, as in the original app). “Group for HA” is an extra safeguard: a user group of its own for the Home Assistant entities that the panel only allows buttons and LEDs. It is not required.',
 'Von außen: MyFRITZ-/DynDNS-Name und den am Router freigegebenen Port eintragen. Die Anlage selbst hat keinen Passwortschutz, gib den Port nur gezielt frei.':'Remote access: enter the MyFRITZ/DynDNS name and the port forwarded on your router. The panel itself has no password protection, so forward the port with care.',
 // connect, confirm
 'Mit der Anlage verbinden?':'Connect to the panel?','Später':'Later','Verbinden':'Connect','Bestätigen':'Confirm','Verbindung getrennt':'Disconnected','Getrennt':'Disconnected','Verbindung verlängert (5 min)':'Connection extended (5 min)',
@@ -592,7 +597,7 @@ const I18N_EN={
 "Genau ein Feld 'key' oder 'taster' angeben.":"Send exactly one field, 'key' or 'taster'.",'Befehlswarteschlange nicht verfügbar.':'Command queue not available.','Passwort falsch.':'Wrong password.','Aktuelles Passwort falsch.':'The current password is wrong.','Bitte anmelden.':'Please sign in.',
 'In Home Assistant meldet dich Home Assistant an, ein eigenes Passwort ist nicht nötig.':'Inside Home Assistant, Home Assistant handles sign-in, so no separate password is needed.',
 'Name: 1 bis 40 Zeichen.':'Name: 1 to 40 characters.','Adresse: nur Hostname oder IP, z. B. 192.168.178.99 oder name.myfritz.net.':'Address: host name or IP only, e.g. 192.168.178.99 or name.myfritz.net.','Port: 1 bis 65535.':'Port: 1 to 65535.',
-'Benutzergruppe: 1 bis 4.':'User group: 1 to 4.','Gruppe für Home Assistant: 1 bis 4 oder wie oben.':'Group for Home Assistant: 1 to 4 or same as above.','Maximal 20 Anlagen.':'At most 20 systems.',
+'Benutzergruppe: 1 bis 4.':'User group: 1 to 4.','Gruppe für Home Assistant: 1 bis 4 oder wie oben.':'Group for Home Assistant: 1 to 4 or as above.','Maximal 20 Anlagen.':'At most 20 systems.',
 'AES-Schlüssel: 32, 48 oder 64 Hex-Zeichen (0-9, A-F), oder leer lassen.':'AES key: 32, 48 or 64 hex characters (0-9, A-F), or leave it empty.',
 'Zeitüberschreitung':'timed out','Verbindung abgelehnt/keine Route':'connection refused or no route','AES-Schlüssel hat die falsche Länge':'the AES key has the wrong length',
 'Die Anlage antwortet verschlüsselt: bitte den AES-Schlüssel bei der Anlage eintragen.':'The panel answers encrypted: please enter the AES key for this system.','Entschlüsseln fehlgeschlagen: AES-Schlüssel falsch?':'Decryption failed: wrong AES key?'
@@ -714,6 +719,7 @@ function openSysEditor(sy){
   document.getElementById('fPort').value=sy?sy.port:8016;
   document.getElementById('fGroup').value=sy?sy.group:'1';
   document.getElementById('fHaGroup').value=sy&&sy.haGroup?sy.haGroup:'';
+  document.getElementById('fAdv').open=!!(sy&&(sy.hasKey||sy.haGroup));
   const fk=document.getElementById('fKey');fk.value='';
   fk.placeholder=sy&&sy.hasKey?'gespeichert (leer = behalten, - = löschen)':'leer = ohne';
   document.getElementById('fErr').textContent='';
