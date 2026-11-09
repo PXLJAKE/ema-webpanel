@@ -10,6 +10,31 @@ desktop, can be installed as an app (PWA), and has a light and a dark theme. No 
 > It controls a safety-relevant system. **Use it at your own risk, with no warranty** (see
 > [LICENSE](LICENSE)). Do not rely on it as the only way to monitor or operate your alarm system.
 
+<p align="center">
+  <img src="docs/screenshots/phone-keypad-dark.png" width="230" alt="Keypad on a phone, dark theme">
+  <img src="docs/screenshots/phone-buttons-dark.png" width="230" alt="Function buttons and indicators">
+  <img src="docs/screenshots/phone-keypad-light.png" width="230" alt="Keypad on a phone, light theme">
+</p>
+
+<sub>Screenshots use the built-in demo panel ([`tools/demo-panel.mjs`](tools/demo-panel.mjs)) with made-up data.</sub>
+
+## Compatible systems
+
+The app talks to the IP transmitter unit of the alarm panel with the same plain HTTP/XML
+keypad protocol as the vendor's *MB-Remote Control* app, and shows the panel's keypad
+(model 12540 layout: 2 × 40 LCD, 8 status LEDs, function keys), its function buttons and LEDs.
+
+| Device | Status |
+|---|---|
+| Honeywell / NOVAR **DS7700** IP transmitter (reports as *DS7500 IP*), firmware `ADIST.10.0V08.05`, without AES key | ✅ Tested daily by the author: live display, buttons, LEDs |
+| Other units that work with the *MB-Remote Control V2* app (e.g. other DS7500/DS7700 firmware versions) | 🟡 Very likely, not tested yet |
+| Units with an AES key set in the original app | ⚪ Not supported yet (the protocol is known, encryption is still missing) |
+
+Rule of thumb: if the original *MB-Remote Control V2* app can show your keypad over the network
+(default port `8016`), this app should work too. Please open an issue with your device and
+firmware, working or not, so the list can grow. Product names belong to their owners and are
+used only to describe compatibility; this project is not affiliated with them.
+
 ## Features
 
 - Live display of the panel: LCD text, status LEDs, function buttons and indicator LEDs
@@ -96,6 +121,20 @@ The app detects Home Assistant by the Supervisor token. Environment variables fo
 - Every sent command is logged by the add-on.
 - In Home Assistant, access is through HA's own authentication (Ingress); the add-on exposes no port.
 - Standalone, the optional password protects every API call except the health check; for access from outside use Cloudflare Access (or a VPN) in addition.
+
+## More screenshots
+
+| Desktop / tablet | Systems | Settings |
+|---|---|---|
+| <img src="docs/screenshots/desktop-keypad-dark.png" width="420" alt="Desktop layout"> | <img src="docs/screenshots/phone-systems-light.png" width="200" alt="Systems page"> | <img src="docs/screenshots/phone-settings-light.png" width="200" alt="Settings"> |
+| <img src="docs/screenshots/desktop-buttons-dark.png" width="420" alt="Desktop buttons"> | <img src="docs/screenshots/phone-leds-dark.png" width="200" alt="LEDs page"> | |
+
+## Try it without a panel
+
+```bash
+node tools/demo-panel.mjs 18016          # fake panel with made-up data, commands are only logged
+cd ema-panel && DATA_DIR=./data cargo run # open http://localhost:8099, add system 127.0.0.1 port 18016
+```
 
 ## Development
 
