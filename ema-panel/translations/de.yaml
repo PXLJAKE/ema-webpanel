@@ -1,7 +1,7 @@
 configuration:
   panel_host:
     name: Adresse der Anlage
-    description: IP-Adresse oder Hostname der Übertragungseinheit im lokalen Netz (z. B. 192.168.178.99).
+    description: IP-Adresse oder Hostname der Übertragungseinheit im lokalen Netz (z. B. 192.168.178.99). Nur für die erste Anlage beim ersten Start; weitere Anlagen und Änderungen machst du in der App unter „Anlagen“.
   panel_port:
     name: Port der Anlage
     description: Standard ist 8016.
