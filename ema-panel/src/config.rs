@@ -21,9 +21,6 @@ pub struct Options {
     /// fed by a permanent background session that never touches the keypad page.
     #[serde(default)]
     pub mqtt_entities: bool,
-    /// User group for that background session; empty = the system's own group.
-    #[serde(default)]
-    pub mqtt_group: String,
     /// Offer the Taster as HA buttons (only while control is on as well). Default off.
     #[serde(default)]
     pub mqtt_buttons: bool,
@@ -85,7 +82,6 @@ impl Options {
             mqtt_entities: env("MQTT_ENTITIES")
                 .map(|v| v == "true" || v == "1")
                 .unwrap_or(false),
-            mqtt_group: env("MQTT_GROUP").unwrap_or_default(),
             mqtt_buttons: env("MQTT_BUTTONS")
                 .map(|v| v == "true" || v == "1")
                 .unwrap_or(false),

@@ -397,10 +397,117 @@ pub struct Panel {
     group: String,
     sid: String,
     cnt: String,
+    /// AES key (16/24/32 bytes) when the panel is set up with one; None = plain text.
+    key: Option<Vec<u8>>,
+}
+
+// ---------------------------------------------------------------- AES (like the original app)
+//
+// With a key the app sends `<page>?B-GR=<group>&` followed by the upper-case hex of
+// AES-ECB-PKCS7("S-ID=..&CNT=..[&T..]"), and the panel answers `<crypt>HEX</crypt>`,
+// whose decrypted content (Cp1250) is the usual XML.
+
+pub fn key_bytes(hex: &str) -> Option<Vec<u8>> {
+    let h = hex.trim();
+    if h.is_empty() {
+        return None;
+    }
+    let b = hex_decode(h)?;
+    matches!(b.len(), 16 | 24 | 32).then_some(b)
+}
+
+fn hex_decode(h: &str) -> Option<Vec<u8>> {
+    if h.len() % 2 != 0 {
+        return None;
+    }
+    (0..h.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(h.get(i..i + 2)?, 16).ok())
+        .collect()
+}
+
+fn hex_upper(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02X}")).collect()
+}
+
+fn ecb<F: FnMut(&mut [u8; 16])>(data: &mut [u8], mut f: F) {
+    for chunk in data.chunks_exact_mut(16) {
+        let mut block = [0u8; 16];
+        block.copy_from_slice(chunk);
+        f(&mut block);
+        chunk.copy_from_slice(&block);
+    }
+}
+
+pub fn encrypt_hex(key: &[u8], plain: &str) -> Result<String, String> {
+    use aes::cipher::{generic_array::GenericArray, BlockEncrypt, KeyInit};
+    let mut data = plain.as_bytes().to_vec();
+    let pad = 16 - data.len() % 16;
+    data.extend(std::iter::repeat(pad as u8).take(pad));
+    macro_rules! run {
+        ($c:ty) => {{
+            let c = <$c>::new_from_slice(key).map_err(|_| "AES-Schlüssel hat die falsche Länge")?;
+            ecb(&mut data, |b| {
+                c.encrypt_block(GenericArray::from_mut_slice(b))
+            });
+        }};
+    }
+    match key.len() {
+        16 => run!(aes::Aes128),
+        24 => run!(aes::Aes192),
+        32 => run!(aes::Aes256),
+        _ => return Err("AES-Schlüssel hat die falsche Länge".into()),
+    }
+    Ok(hex_upper(&data))
+}
+
+pub fn decrypt_hex(key: &[u8], hex: &str) -> Result<String, String> {
+    use aes::cipher::{generic_array::GenericArray, BlockDecrypt, KeyInit};
+    let mut data = hex_decode(hex.trim()).ok_or("verschlüsselte Antwort ist kein Hex")?;
+    if data.is_empty() || data.len() % 16 != 0 {
+        return Err("verschlüsselte Antwort hat eine falsche Länge".into());
+    }
+    macro_rules! run {
+        ($c:ty) => {{
+            let c = <$c>::new_from_slice(key).map_err(|_| "AES-Schlüssel hat die falsche Länge")?;
+            ecb(&mut data, |b| {
+                c.decrypt_block(GenericArray::from_mut_slice(b))
+            });
+        }};
+    }
+    match key.len() {
+        16 => run!(aes::Aes128),
+        24 => run!(aes::Aes192),
+        32 => run!(aes::Aes256),
+        _ => return Err("AES-Schlüssel hat die falsche Länge".into()),
+    }
+    let pad = *data.last().unwrap() as usize;
+    if pad == 0
+        || pad > 16
+        || data.len() < pad
+        || !data[data.len() - pad..].iter().all(|&b| b as usize == pad)
+    {
+        return Err("Entschlüsseln fehlgeschlagen: AES-Schlüssel falsch?".into());
+    }
+    data.truncate(data.len() - pad);
+    // Cp1250: the letters the panel uses (äöüß ÄÖÜ) sit where Latin-1 has them
+    Ok(data.iter().map(|&b| b as char).collect())
+}
+
+/// `<crypt>HEX</crypt>` -> the inner hex, if the answer is encrypted.
+fn crypt_payload(body: &str) -> Option<&str> {
+    let a = body.find("<crypt>")? + "<crypt>".len();
+    let b = body[a..].find("</crypt>")? + a;
+    Some(body[a..b].trim())
 }
 
 impl Panel {
     pub fn new(host: &str, port: u16, group: &str) -> Panel {
+        Panel::with_key(host, port, group, "")
+    }
+
+    /// `key_hex` empty = plain text, otherwise the panel's AES key as hex.
+    pub fn with_key(host: &str, port: u16, group: &str, key_hex: &str) -> Panel {
         let http = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(4))
             .timeout(Duration::from_secs(8))
@@ -413,6 +520,7 @@ impl Panel {
             group: group.to_string(),
             sid: "00".into(),
             cnt: "FFFF".into(),
+            key: key_bytes(key_hex),
         }
     }
 
@@ -425,14 +533,20 @@ impl Panel {
 
     /// One GET. `command` is an already-validated `T..` suffix or empty.
     async fn get(&self, page: &str, command: &str) -> Result<(u16, String), String> {
-        let mut url = format!(
-            "{}/{page}?B-GR={}&S-ID={}&CNT={}",
-            self.base, self.group, self.sid, self.cnt
-        );
+        let mut rest = format!("S-ID={}&CNT={}", self.sid, self.cnt);
         if !command.is_empty() {
-            url.push('&');
-            url.push_str(command);
+            rest.push('&');
+            rest.push_str(command);
         }
+        let url = match &self.key {
+            Some(k) => format!(
+                "{}/{page}?B-GR={}&{}",
+                self.base,
+                self.group,
+                encrypt_hex(k, &rest)?
+            ),
+            None => format!("{}/{page}?B-GR={}&{rest}", self.base, self.group),
+        };
         let resp = self
             .http
             .get(&url)
@@ -454,6 +568,11 @@ impl Panel {
         if !(200..300).contains(&status) {
             return Err(format!("Anlage antwortet mit HTTP {status}"));
         }
+        let body = match (crypt_payload(&body), &self.key) {
+            (Some(hex), Some(k)) => decrypt_hex(k, hex)?,
+            (Some(_), None) => return Err("Die Anlage antwortet verschlüsselt: bitte den AES-Schlüssel bei der Anlage eintragen.".into()),
+            (None, _) => body,
+        };
         Ok((status, body))
     }
 
@@ -516,6 +635,31 @@ fn describe(e: &reqwest::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn aes_matches_openssl_and_roundtrips() {
+        let k = key_bytes("000102030405060708090a0b0c0d0e0f").unwrap();
+        let enc = encrypt_hex(&k, "S-ID=01&CNT=40E5&T06").unwrap();
+        assert_eq!(
+            enc,
+            "9306CB0EF8B97488B6A1360ED0B91D1D23BE75F9F4187D2B3A2C27F7EAB1012E"
+        );
+        assert_eq!(decrypt_hex(&k, &enc).unwrap(), "S-ID=01&CNT=40E5&T06");
+        let k256 = key_bytes(&"1F".repeat(32)).unwrap();
+        let xml = "<ui_io><Counter>0001</Counter><Text>Haustür</Text></ui_io>";
+        let latin1: String = xml.chars().collect();
+        let bytes: Vec<u8> = latin1.chars().map(|c| c as u32 as u8).collect();
+        // encrypt the Latin-1 bytes like the panel would and read them back
+        let e = encrypt_hex(&k256, &String::from_utf8_lossy(&bytes)).unwrap();
+        assert!(decrypt_hex(&k256, &e).is_ok());
+        assert!(
+            decrypt_hex(&key_bytes(&"20".repeat(32)).unwrap(), &e).is_err()
+                || decrypt_hex(&key_bytes(&"20".repeat(32)).unwrap(), &e).unwrap() != xml
+        );
+        assert!(key_bytes("0011").is_none());
+        assert!(key_bytes("").is_none());
+        assert_eq!(crypt_payload("<?xml?><crypt> AB12 </crypt>"), Some("AB12"));
+    }
 
     const INIT: &str = "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\n<ui_init>\n <Init>\n  <Counter>0001</Counter>\n  <Session_ID>AB12</Session_ID>\n </Init>\n <LED_Page>\n  <L1>Alarm</L1>\n  <L2>Strom</L2>\n </LED_Page>\n <Button_Page>\n  <Page_12540>On</Page_12540>\n  <Page_12540_Revision>On</Page_12540_Revision>\n  <Page_Button>On</Page_Button>\n  <Page_LED>Off</Page_LED>\n  <B1>Garage</B1>\n  <B2>Licht</B2>\n </Button_Page>\n</ui_init>";
 

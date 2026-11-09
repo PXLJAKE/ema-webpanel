@@ -2,8 +2,9 @@
 //!
 //! The panel lets only one user at a time onto the keypad page (`ui_12540`), but the
 //! button/LED page (`ui_io`) works in several sessions at once. So this task keeps a permanent
-//! session that only ever reads `ui_io` (optionally with its own user group, which the panel
+//! session that only ever reads `ui_io` (with the system's own HA user group, which the panel
 //! can restrict to buttons and LEDs) and leaves the keypad free until someone opens it in the UI.
+//! Verified on a real panel: an io-only session does not take the keypad.
 //!
 //! Taster become HA buttons only while "control" is on AND the `mqtt_buttons` option is on.
 //! Presses from HA go through the same whitelist and are logged; they are never retried.
@@ -226,6 +227,58 @@ pub fn discovery(sys: &System, info: &InitInfo, buttons_enabled: bool) -> Vec<Di
             push("binary_sensor", format!("indicator{k}"), cfg);
         }
     }
+    // status lamps of the keypad page: only known while the keypad is open in the app
+    let keypad_avail =
+        json!([{ "topic": format!("{BASE}/status") }, { "topic": format!("{BASE}/{tid}/keypad") }]);
+    for tag in STATUS_TAGS {
+        let lower = tag.to_ascii_lowercase();
+        let cfg = json!({
+            "name": format!("Status {}", panel::led_label(tag)),
+            "unique_id": format!("{node}_status_{lower}"),
+            "state_topic": format!("{BASE}/{tid}/status/{lower}"),
+            "json_attributes_topic": format!("{BASE}/{tid}/status/{lower}/attr"),
+            "payload_on": "ON",
+            "payload_off": "OFF",
+            "availability": keypad_avail,
+            "availability_mode": "all",
+            "has_entity_name": true,
+            "device": device,
+        });
+        push("binary_sensor", format!("status_{lower}"), Some(cfg));
+    }
+    out
+}
+
+/// The status lamps of the keypad page (`ui_12540`).
+pub const STATUS_TAGS: [&str; 8] = [
+    "Betrieb",
+    "S_Alarm",
+    "S_Stoerung",
+    "Sys_Stoerung",
+    "Einbruch",
+    "Sabotage",
+    "Ueberfall",
+    "Pol_Not",
+];
+
+/// State messages for the status lamps, taken from the app's own keypad session.
+pub fn status_states(tid: &str, leds: &[crate::panel::Led]) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for tag in STATUS_TAGS {
+        let lower = tag.to_ascii_lowercase();
+        let v = leds.iter().find(|l| l.tag == tag).map(|l| LedVal {
+            color: l.color.clone(),
+            state: l.state.clone(),
+        });
+        out.push((
+            format!("{BASE}/{tid}/status/{lower}"),
+            on_off(v.as_ref()).to_string(),
+        ));
+        out.push((
+            format!("{BASE}/{tid}/status/{lower}/attr"),
+            attrs(v.as_ref()),
+        ));
+    }
     out
 }
 
@@ -339,11 +392,7 @@ pub async fn run(shared: Arc<Shared>) {
             tokio::time::sleep(Duration::from_secs(5)).await;
             continue;
         };
-        let group = if o.mqtt_group.trim().is_empty() {
-            sys.group.clone()
-        } else {
-            o.mqtt_group.trim().to_string()
-        };
+        let group = sys.ha_group().to_string();
         if cur.as_ref() != Some(&sys) {
             if let Some(old) = &cur {
                 publish(
@@ -358,7 +407,7 @@ pub async fn run(shared: Arc<Shared>) {
                 "Hintergrund-Sitzung für HA: {} ({}:{}, Gruppe {group}, nur Taster/LEDs)",
                 sys.name, sys.host, sys.port
             );
-            panel = Panel::new(&sys.host, sys.port, &group);
+            panel = Panel::with_key(&sys.host, sys.port, &group, &sys.key);
             info = None;
             cur = Some(sys.clone());
         }
@@ -425,6 +474,30 @@ pub async fn run(shared: Arc<Shared>) {
                 errors = 0;
                 let mut msgs = states(&tid, &io);
                 msgs.push((format!("{BASE}/{tid}/panel"), "online".into()));
+                // status lamps ride along while the app's keypad session for this system runs
+                let keypad = {
+                    let snap = shared.snap.read().unwrap();
+                    let same = shared
+                        .target
+                        .read()
+                        .unwrap()
+                        .as_ref()
+                        .map(|t| t.id == sys.id)
+                        .unwrap_or(false);
+                    (same
+                        && crate::wanted(&shared)
+                        && snap.connected
+                        && snap.error.is_none()
+                        && snap.leds.iter().any(|l| !l.tag.starts_with("page:")))
+                    .then(|| snap.leds.clone())
+                };
+                match keypad {
+                    Some(leds) => {
+                        msgs.extend(status_states(&tid, &leds));
+                        msgs.push((format!("{BASE}/{tid}/keypad"), "online".into()));
+                    }
+                    None => msgs.push((format!("{BASE}/{tid}/keypad"), "offline".into())),
+                }
                 for (t, p) in msgs {
                     if last.get(&t) != Some(&p) {
                         publish(&client, &t, &p, true).await;
@@ -463,6 +536,8 @@ mod tests {
             host: "h".into(),
             port: 8016,
             group: "1".into(),
+            key: String::new(),
+            ha_group: String::new(),
         }
     }
 

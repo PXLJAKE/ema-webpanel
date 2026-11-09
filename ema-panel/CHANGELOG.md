@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0
+- AES key per system (optional, hex): with a key, requests are sent and answers read encrypted like the original app (AES-ECB, PKCS7, hex); without one everything stays plain text. The key is stored in `/data/systems.json` and never sent to the browser; edit it in the system dialog (empty = keep, `-` = remove).
+- "Gruppe für HA" per system: the Home Assistant background session can use a different user group than the keypad (e.g. main group 3, HA group 2 with buttons and LEDs only). Replaces the `mqtt_group` option.
+- New HA entities "Status Betrieb/Einbruch/Sabotage/…": the keypad page's status lamps, available while the keypad is open in the app.
+- Checked on the real panel: a session that only reads buttons/LEDs does not lock the keypad; a second keypad reader gets `Locked=YES` but still the status lamps.
+
 ## 0.5.0
 - Home Assistant entities over MQTT discovery (option `mqtt_entities`, off by default; uses the Mosquitto broker, credentials come from the Supervisor). One device per system with binary sensors for the 8 LEDs of the LED page, the 8 Taster LEDs, the 3 indicators and the connection.
 - A permanent background session feeds them. It only reads the button/LED page (`ui_io`) and never the keypad page, so the keypad stays free for the app and the original keypad. Option `mqtt_group` gives it a user group of its own (e.g. 2, restricted in the panel to buttons and LEDs).

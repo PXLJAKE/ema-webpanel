@@ -14,6 +14,51 @@ pub struct System {
     pub host: String,
     pub port: u16,
     pub group: String,
+    /// Optional AES key of the panel as hex (32/48/64 digits). Empty = plain text.
+    /// Never sent to the browser (see `public`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub key: String,
+    /// User group for the Home Assistant background session (buttons/LEDs only).
+    /// Empty = the same group as above.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub ha_group: String,
+}
+
+impl System {
+    /// Group of the Home Assistant background session.
+    pub fn ha_group(&self) -> &str {
+        if self.ha_group.is_empty() {
+            &self.group
+        } else {
+            &self.ha_group
+        }
+    }
+
+    /// What the UI gets: everything except the key itself.
+    pub fn public(&self) -> serde_json::Value {
+        serde_json::json!({
+            "id": self.id, "name": self.name, "host": self.host, "port": self.port,
+            "group": self.group, "hasKey": !self.key.is_empty(), "haGroup": self.ha_group,
+        })
+    }
+}
+
+/// Normalise an AES key: hex digits only (spaces/colons/dashes ignored), 32, 48 or 64 of them.
+pub fn normalize_key(raw: &str) -> Result<String, String> {
+    let k: String = raw
+        .chars()
+        .filter(|c| !matches!(c, ' ' | ':' | '-'))
+        .collect::<String>()
+        .to_ascii_uppercase();
+    if k.is_empty() {
+        return Ok(k);
+    }
+    if !k.chars().all(|c| c.is_ascii_hexdigit()) || !matches!(k.len(), 32 | 48 | 64) {
+        return Err(
+            "AES-Schlüssel: 32, 48 oder 64 Hex-Zeichen (0-9, A-F), oder leer lassen.".into(),
+        );
+    }
+    Ok(k)
 }
 
 /// What the UI sends when adding or editing a system.
@@ -24,6 +69,12 @@ pub struct SystemInput {
     pub host: String,
     pub port: Option<u16>,
     pub group: Option<String>,
+    /// None = keep the stored key, "" = remove it, otherwise the new key.
+    #[serde(default)]
+    pub key: Option<String>,
+    /// "" or None = same group as above
+    #[serde(default, alias = "haGroup")]
+    pub ha_group: Option<String>,
 }
 
 pub struct Store {
@@ -121,6 +172,16 @@ impl Store {
 
     pub fn upsert(&self, input: SystemInput) -> Result<System, String> {
         let (name, host, port, group) = validate(&input)?;
+        let key = input.key.as_deref().map(normalize_key).transpose()?;
+        let ha_group = input
+            .ha_group
+            .clone()
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        if !matches!(ha_group.as_str(), "" | "1" | "2" | "3" | "4") {
+            return Err("Gruppe für Home Assistant: 1 bis 4 oder wie oben.".into());
+        }
         let sys = {
             let mut l = self.list.write().unwrap();
             match input.id.as_deref().filter(|i| !i.is_empty()) {
@@ -133,6 +194,10 @@ impl Store {
                     s.host = host;
                     s.port = port;
                     s.group = group;
+                    if let Some(k) = key {
+                        s.key = k;
+                    }
+                    s.ha_group = ha_group;
                     s.clone()
                 }
                 None => {
@@ -149,6 +214,8 @@ impl Store {
                         host,
                         port,
                         group,
+                        key: key.unwrap_or_default(),
+                        ha_group,
                     };
                     l.push(s.clone());
                     s
@@ -199,7 +266,32 @@ mod tests {
             host: host.into(),
             port,
             group: group.map(|g| g.into()),
+            key: None,
+            ha_group: None,
         }
+    }
+
+    #[test]
+    fn keys() {
+        assert_eq!(normalize_key("").unwrap(), "");
+        assert_eq!(
+            normalize_key("00112233 44556677:8899aabb-ccddeeff").unwrap(),
+            "00112233445566778899AABBCCDDEEFF"
+        );
+        assert!(normalize_key("0011").is_err());
+        assert!(normalize_key("zz112233445566778899aabbccddeeff").is_err());
+        let s = System {
+            id: "a".into(),
+            name: "n".into(),
+            host: "h".into(),
+            port: 1,
+            group: "1".into(),
+            key: "AB".repeat(16),
+            ha_group: String::new(),
+        };
+        let v = s.public();
+        assert_eq!(v["hasKey"], true);
+        assert!(v.get("key").is_none());
     }
 
     #[test]
@@ -233,6 +325,8 @@ mod tests {
             host: "10.0.0.1".into(),
             port: 8016,
             group: "1".into(),
+            key: String::new(),
+            ha_group: String::new(),
         };
         let st = Store::load(&path, Some(seed));
         assert_eq!(st.list().len(), 1);
