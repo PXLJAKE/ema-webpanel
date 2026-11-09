@@ -330,7 +330,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     <!-- Bedienteil -->
     <section id="view-panel" class="panelwrap">
       <div class="panel">
-        <div class="lcd" id="lcd"><div class="line" id="lcd1"></div><div class="line" id="lcd2"></div></div>
+        <div class="lcd" id="lcd" translate="no"><div class="line" id="lcd1"></div><div class="line" id="lcd2"></div></div>
         <div class="panelgrid">
           <div class="statuscol" id="statuswrap"></div>
           <div class="keys">
@@ -348,7 +348,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     <section id="view-buttons" class="secpad" hidden>
       <div class="sectitle">Statusanzeigen</div>
       <div class="ind-row" id="indRow"></div>
-      <div class="sechead"><div class="sectitle" style="margin:0">Taster</div><button class="editlink" id="editLink">Bearbeiten</button></div>
+      <div class="sechead"><div class="sectitle" style="margin:0" data-en="Function buttons">Taster</div><button class="editlink" id="editLink">Bearbeiten</button></div>
       <div class="btn-grid" id="btnGrid"></div>
       <div id="btnEmpty"></div>
     </section>
@@ -484,6 +484,8 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
   </div>
   <div class="grp">Ansicht (dieses Gerät)</div>
   <div id="pageToggles"></div>
+  <div class="setrow"><div class="name">Sprache</div>
+    <select id="langSel" aria-label="Sprache"><option value="">Automatisch</option><option value="en" translate="no">English</option><option value="de" translate="no">Deutsch</option></select></div>
   <div class="setrow"><div class="name">Info erneut anzeigen</div><button class="btn-ghost" id="showIntro">Anzeigen</button></div>
   <div class="setrow"><div class="name">Verbindung zur Anlage testen<small>Nur lesen – zeigt Status und Rohdaten.</small></div><button class="btn-ghost" id="connTestBtn">Testen</button></div>
   <div class="conn-result" id="connResult" hidden></div>
@@ -504,6 +506,127 @@ function store(k,v){try{localStorage.setItem(k,v);}catch(e){}}
 function load(k){try{return localStorage.getItem(k);}catch(e){return null;}}
 function loadJSON(k,def){try{const j=load(k);if(j){const v=JSON.parse(j);return v;}}catch(e){}return def;}
 try{applyTheme(localStorage.getItem('mb-theme'));}catch(e){}
+// ====================================================================
+//  Language: German texts are the source, English is a translation of them.
+//  Order: this device's choice, add-on option, Home Assistant user language,
+//  HA system language (from the add-on), browser language, English.
+//  Names that come from the panel (buttons, LEDs, LCD, system names) are never translated.
+// ====================================================================
+function pickLang(){
+  const ok=v=>(v==='en'||v==='de')?v:null;
+  const dev=ok(load('mb-lang'));if(dev)return dev;
+  const opt=ok(root.dataset.langOpt);if(opt)return opt;
+  try{if(window.parent!==window){const h=window.parent.document.querySelector('home-assistant');const hs=h&&h.hass;const l=hs&&((hs.locale&&hs.locale.language)||hs.language);if(l)return /^de/i.test(l)?'de':'en';}}catch(e){}
+  const srv=ok(root.dataset.serverLang);if(srv)return srv;
+  const nav=(navigator.languages&&navigator.languages[0])||navigator.language||'';
+  return /^de/i.test(nav)?'de':'en';
+}
+const LANG=pickLang();root.lang=LANG;
+const LOCALE=LANG==='de'?'de-DE':'en-GB';
+const I18N_EN={
+// header, bars
+'Alarmzentrale · lokal':'Alarm panel · local','Verbindung':'Connection','verbinde':'connecting','getrennt':'disconnected','Backend nicht erreichbar':'Backend unreachable',
+'Verbindung zur Anlage trennen':'Disconnect from the panel','Trennen':'Disconnect','Hell/Dunkel':'Light/dark','Hell/Dunkel umschalten':'Switch light/dark','Einstellungen':'Settings',
+'⚠ Kein Passwort gesetzt · jeder mit diesem Link sieht die Anlage. Tippen zum Festlegen.':'⚠ No password set · anyone with this link can see the panel. Tap to set one.',
+'👁 Nur-Lesen-Modus · es werden keine Befehle an die Anlage gesendet':'👁 View-only mode · no commands are sent to the panel',
+// tabs, systems
+'Anlagen':'Systems','Bedienteil':'Keypad','Deine Anlagen':'Your systems','Bearbeiten':'Edit','Fertig':'Done','＋ Anlage hinzufügen':'＋ Add system','Anlage hinzufügen':'Add system','Anlage bearbeiten':'Edit system',
+'Tippe eine Anlage an, um dich zu verbinden. Es ist immer nur eine Anlage gleichzeitig verbunden. Über „Bearbeiten“ kannst du Anlagen ändern, löschen und sortieren, auch Anlagen von außen (MyFRITZ-/DynDNS-Adresse und freigegebener Port).':'Tap a system to connect. Only one system is connected at a time. Use “Edit” to change, delete and reorder systems, including remote ones (MyFRITZ/DynDNS address and forwarded port).',
+'Noch keine Anlage':'No system yet','Lege mit „Anlage hinzufügen" deine erste an.':'Use “Add system” to create your first one.','Löschen':'Delete','Verbunden':'Connected','Verbinde …':'Connecting …',
+'Sortieren fehlgeschlagen':'Reordering failed','Gespeichert':'Saved','Anlage hinzugefügt':'System added','Gruppe':'Group','HA-Gruppe':'HA group',
+// keypad
+'EIN':'Arm','AUS':'Disarm','Statusanzeigen':'Status indicators','Betrieb':'Operation','Sum. Alarm':'Common alarm','Sum. Störung':'Common fault','Sys. Störung':'System fault','Einbruch':'Intrusion','Sabotage':'Tamper','Überfall':'Hold-up','Pol.-Notruf':'Police call',
+'Nur-Lesen-Modus – keine Befehle':'View-only mode, no commands','Gesendet':'Sent','Anlage scharf schalten?':'Arm the system?','Anlage unscharf schalten?':'Disarm the system?','EIN gesendet':'Arm sent','AUS gesendet':'Disarm sent','nicht verbunden':'not connected',
+// buttons, LEDs
+'Feuer':'Fire','Wasseralarm':'Water alarm','Heizung Störung':'Heating fault','Ruhe':'Normal','Störung':'Fault','aktiv':'active','Taster':'Button','Ausblenden':'Hide',
+'Noch keine Taster':'No buttons yet','Sobald die Anlage Taster meldet, erscheinen sie hier automatisch.':'Buttons show up here automatically as soon as the panel reports them.',
+'Noch keine LEDs':'No LEDs yet','Sobald die Anlage Statusanzeigen meldet, erscheinen sie hier automatisch.':'LEDs show up here automatically as soon as the panel reports them.',
+'Ausgeblendete zurückholen':'Show hidden items','Alle Elemente sichtbar':'All items visible',
+// intro
+'Dieses Panel zeigt deine Alarmanlage':'This panel shows your alarm system','an, lokal in deinem Netzwerk.':', locally on your network.',
+'an, direkt aus Home Assistant, lokal in deinem Netzwerk.':', straight from Home Assistant, on your local network.',
+'an. Alles wird hier eingerichtet, Dateien oder Variablen brauchst du nicht.':'. Everything is set up right here, no files or variables needed.',
+'Standard ist':'The default is','Nur-Lesen':'view only',': Status, Display und LEDs werden angezeigt, es werden keine Befehle gesendet. Steuern schaltest du bewusst unter':': status, display and LEDs are shown, no commands are sent. You switch on control deliberately under','⚙ Einstellungen':'⚙ Settings','ein.':'.',
+'Deine Anlagen (Adresse, Port, Gruppe) legst du direkt hier unter':'You add your systems (address, port, group) right here under','an.':'.',
+'Unter „Verbindung testen“ siehst du die Rohdaten der Anlage.':'“Test connection” shows the raw data of the panel.',
+'Zugang schützen (empfohlen)':'Protect access (recommended)','Wenn die Seite auch von außen erreichbar ist (z. B. über einen Cloudflare-Tunnel), lege ein Passwort fest.':'If the page can also be reached from outside (e.g. through a Cloudflare tunnel), set a password.',
+'Passwort (mind. 6 Zeichen)':'Password (at least 6 characters)','Passwort wiederholen':'Repeat password','Passwort speichern und weiter':'Save password and continue','Ohne Passwort weiter':'Continue without password','Verstanden':'Got it',
+// login, password
+'Anmelden':'Sign in','Alarm Keypad ist mit einem Passwort geschützt.':'Alarm Keypad is protected by a password.','Passwort':'Password',
+'Passwort vergessen? Datei':'Forgot the password? Delete the file','im Datenordner löschen und den Container neu starten (Anlagen bleiben erhalten).':'in the data folder and restart the container (your systems are kept).',
+'Passwort festlegen':'Set password','Aktuelles Passwort':'Current password','Neues Passwort (mind. 6 Zeichen)':'New password (at least 6 characters)','Neues Passwort wiederholen':'Repeat new password','Abbrechen':'Cancel','Speichern':'Save',
+'Passwort: mindestens 6 Zeichen.':'Password: at least 6 characters.','Die Passwörter sind nicht gleich.':'The passwords do not match.','Passwort gespeichert':'Password saved','Passwort eingeben.':'Enter the password.',
+'Neues Passwort: mindestens 6 Zeichen.':'New password: at least 6 characters.','Die neuen Passwörter sind nicht gleich.':'The new passwords do not match.','Passwort entfernt':'Password removed','Passwort ändern':'Change password',
+'Alle anderen Geräte werden dabei abgemeldet.':'All other devices will be signed out.','Danach ist zum Öffnen eine Anmeldung nötig. Dieses Gerät bleibt angemeldet.':'After that, signing in is required to open the page. This device stays signed in.',
+'Danach kann jeder, der die Seite erreicht, die Anlage sehen.':'After that, anyone who can reach the page can see the panel.','Passwort bestätigen':'Confirm password','Zum Einschalten der Steuerung bitte das Passwort eingeben.':'Enter the password to switch on control.','Einschalten':'Switch on',
+// system editor
+'Name':'Name','z. B. Ferienhaus':'e.g. Holiday home','Adresse':'Address','192.168.178.99 oder name.myfritz.net':'192.168.178.99 or name.myfritz.net','AES-Schlüssel':'AES key','leer = ohne':'empty = none','Gruppe für HA':'Group for HA','wie oben':'same as above',
+'gespeichert (leer = behalten, - = löschen)':'saved (empty = keep, - = remove)',
+'AES-Schlüssel nur eintragen, wenn die Anlage einen hat (Hex, wie in der Original-App). „Gruppe für HA“ nutzt die Home-Assistant-Anbindung, am besten eine Gruppe nur mit Tastern und LEDs.':'Only enter an AES key if the panel uses one (hex, as in the original app). “Group for HA” is used for the Home Assistant entities, ideally a group with only buttons and LEDs.',
+'Von außen: MyFRITZ-/DynDNS-Name und den am Router freigegebenen Port eintragen. Die Anlage selbst hat keinen Passwortschutz, gib den Port nur gezielt frei.':'Remote access: enter the MyFRITZ/DynDNS name and the port forwarded on your router. The panel itself has no password protection, so forward the port with care.',
+// connect, confirm
+'Mit der Anlage verbinden?':'Connect to the panel?','Später':'Later','Verbinden':'Connect','Bestätigen':'Confirm','Verbindung getrennt':'Disconnected','Getrennt':'Disconnected','Verbindung verlängert (5 min)':'Connection extended (5 min)',
+'Am Bedienteil der Anlage kann immer nur ein Benutzer gleichzeitig angemeldet sein. Deshalb verbindet sich Alarm Keypad erst, wenn du es willst, und trennt nach 5 Minuten ohne Bedienung automatisch.':'Only one user at a time can use the keypad of the panel. That is why Alarm Keypad only connects when you ask it to, and disconnects automatically after 5 minutes without use.',
+'Die Verbindung wurde nach 5 Minuten ohne Bedienung getrennt, damit die Anlage für andere frei ist. Neu verbinden?':'The connection was closed after 5 minutes without use, so the panel is free for others. Connect again?',
+'Lege zuerst eine Anlage an: Name, Adresse (IP oder MyFRITZ-/DynDNS-Name), Port und Gruppe.':'First add a system: name, address (IP or MyFRITZ/DynDNS name), port and group.',
+// settings
+'Anlage und Zugang werden auf dem Server gespeichert und gelten für alle Geräte.':'Panel and access settings are stored on the server and apply to all devices.','Anlage':'Panel','Steuern erlauben':'Allow control',
+'Aus: nur Ansicht, es werden keine Befehle gesendet.':'Off: view only, no commands are sent.','An: Tasten, EIN/AUS und Taster senden echte Befehle (EIN/AUS und Taster mit Rückfrage).':'On: keys, arm/disarm and buttons send real commands (arm/disarm and buttons ask first).',
+'Abfrage-Intervall':'Refresh interval','Wie oft der Zustand gelesen wird, solange verbunden.':'How often the state is read while connected.','0,5 s':'0.5 s',
+'Zugang':'Access','Kein Passwort: jeder, der die Seite erreicht, sieht die Anlage.':'No password: anyone who can reach the page sees the panel.','Gesetzt: zum Öffnen ist eine Anmeldung nötig.':'Set: signing in is required to open the page.','Festlegen':'Set','Ändern':'Change',
+'Passwort entfernen':'Remove password','Danach ist keine Anmeldung mehr nötig.':'After that, no sign-in is needed.','Entfernen':'Remove','Abmelden':'Sign out','Nur auf diesem Gerät.':'On this device only.',
+'Tipp für den Zugriff von außen: Cloudflare Tunnel mit':'Tip for remote access: put a Cloudflare tunnel with','(Login per E-Mail-Code) davorschalten. Das Passwort hier ist dann die zweite Sicherung.':'(sign-in with an email code) in front. The password here is then a second layer.',
+'Ansicht (dieses Gerät)':'View (this device)','Sprache':'Language','Automatisch':'Automatic','Info erneut anzeigen':'Show intro again','Anzeigen':'Show',
+'Verbindung zur Anlage testen':'Test connection to the panel','Nur lesen – zeigt Status und Rohdaten.':'Read-only, shows the state and raw data.','Testen':'Test',
+'Teste Verbindung …':'Testing connection …','Anlage nicht konfiguriert':'No system configured','– lege unter „Anlagen“ eine Anlage an.':', add one under “Systems”.','✓ Verbunden':'✓ Connected','Fehlgeschlagen':'Failed','Fehler':'Error',
+'Steuern erlauben? Danach senden Tasten, EIN/AUS und Taster echte Befehle an die Anlage (EIN/AUS und Taster mit Rückfrage).':'Allow control? Keys, arm/disarm and buttons will then send real commands to the panel (arm/disarm and buttons ask first).',
+'Steuern ist an':'Control is on','Nur-Lesen-Modus':'View-only mode',
+// messages from the add-on
+'Noch keine Anlage angelegt.':'No system set up yet.','Anlage nicht gefunden.':'System not found.','Noch keine Anlage angelegt. Lege zuerst eine an.':'No system set up yet. Add one first.',
+'Steuern ist in den Einstellungen ausgeschaltet.':'Control is switched off in the settings.','Keine Verbindung zur Anlage.':'Not connected to the panel.','Unbekannte Taste.':'Unknown key.','Unbekannter Taster.':'Unknown button.',
+"Genau ein Feld 'key' oder 'taster' angeben.":"Send exactly one field, 'key' or 'taster'.",'Befehlswarteschlange nicht verfügbar.':'Command queue not available.','Passwort falsch.':'Wrong password.','Aktuelles Passwort falsch.':'The current password is wrong.','Bitte anmelden.':'Please sign in.',
+'In Home Assistant meldet dich Home Assistant an, ein eigenes Passwort ist nicht nötig.':'Inside Home Assistant, Home Assistant handles sign-in, so no separate password is needed.',
+'Name: 1 bis 40 Zeichen.':'Name: 1 to 40 characters.','Adresse: nur Hostname oder IP, z. B. 192.168.178.99 oder name.myfritz.net.':'Address: host name or IP only, e.g. 192.168.178.99 or name.myfritz.net.','Port: 1 bis 65535.':'Port: 1 to 65535.',
+'Benutzergruppe: 1 bis 4.':'User group: 1 to 4.','Gruppe für Home Assistant: 1 bis 4 oder wie oben.':'Group for Home Assistant: 1 to 4 or same as above.','Maximal 20 Anlagen.':'At most 20 systems.',
+'AES-Schlüssel: 32, 48 oder 64 Hex-Zeichen (0-9, A-F), oder leer lassen.':'AES key: 32, 48 or 64 hex characters (0-9, A-F), or leave it empty.',
+'Zeitüberschreitung':'timed out','Verbindung abgelehnt/keine Route':'connection refused or no route','AES-Schlüssel hat die falsche Länge':'the AES key has the wrong length',
+'Die Anlage antwortet verschlüsselt: bitte den AES-Schlüssel bei der Anlage eintragen.':'The panel answers encrypted: please enter the AES key for this system.','Entschlüsseln fehlgeschlagen: AES-Schlüssel falsch?':'Decryption failed: wrong AES key?'
+};
+const I18N_RX=[
+  [/^Fehler: ([\s\S]*)$/,m=>'Error: '+T(m[1])],[/^: ([\s\S]*)$/,m=>': '+T(m[1])],
+  [/^Verbinden fehlgeschlagen: ([\s\S]*)$/,m=>'Connecting failed: '+T(m[1])],[/^Trennen fehlgeschlagen: ([\s\S]*)$/,m=>'Disconnecting failed: '+T(m[1])],
+  [/^Anlage nicht erreichbar: ([\s\S]*)$/,m=>'Panel not reachable: '+T(m[1])],[/^Anlage antwortet mit HTTP (\d+)$/,m=>'The panel answered with HTTP '+m[1]],
+  [/^Gelöscht: ([\s\S]*)$/,m=>'Deleted: '+m[1]],[/^Ausgeblendet: ([\s\S]*)$/,m=>'Hidden: '+m[1]],[/^([\s\S]*) ausgelöst$/,m=>m[1]+' triggered'],
+  [/^Anlage „([\s\S]*)" löschen\?$/,m=>'Delete “'+m[1]+'”?'],[/^Taster „([\s\S]*)" auslösen\?$/,m=>'Trigger “'+m[1]+'”?'],[/^Mit ([\s\S]*) verbinden\?$/,m=>'Connect to '+m[1]+'?'],
+  [/^Rohdaten \((\d+) Seiten\)$/,m=>'Raw data ('+m[1]+' pages)'],[/^Ausgeblendete zurückholen \((\d+)\)$/,m=>'Show hidden items ('+m[1]+')']
+];
+function T(s){
+  if(LANG!=='en'||s==null)return s;
+  const str=String(s),k=str.replace(/ /g,' ').trim();if(!k)return str;
+  let out=Object.prototype.hasOwnProperty.call(I18N_EN,k)?I18N_EN[k]:null;
+  if(out==null)for(const [rx,f] of I18N_RX){const m=k.match(rx);if(m){out=f(m);break;}}
+  if(out==null)return str;
+  const lead=/^[.,;:]/.test(out)?'':str.match(/^\s*/)[0];
+  return lead+out+str.match(/\s*$/)[0];
+}
+// translate the page as it is built and changed (text nodes plus a few attributes)
+const I18N_ATTRS=['title','aria-label','placeholder'];
+function i18nSkip(el){return !el||!!el.closest('[translate="no"],script,style,code');}
+function i18nNode(n){
+  if(n.nodeType===3){if(i18nSkip(n.parentElement))return;const v=n.nodeValue,t=T(v);if(t!==v)n.nodeValue=t;return;}
+  if(n.nodeType!==1||i18nSkip(n))return;
+  if(n.hasAttribute('data-en')){n.textContent=n.getAttribute('data-en');n.removeAttribute('data-en');n.setAttribute('translate','no');return;}
+  I18N_ATTRS.forEach(a=>{const v=n.getAttribute(a);if(v){const t=T(v);if(t!==v)n.setAttribute(a,t);}});
+  n.childNodes.forEach(i18nNode);
+}
+if(LANG==='en'){
+  i18nNode(document.body);
+  new MutationObserver(ms=>ms.forEach(m=>{
+    if(m.type==='childList')m.addedNodes.forEach(i18nNode);
+    else if(m.type==='characterData')i18nNode(m.target);
+    else if(m.type==='attributes'&&!i18nSkip(m.target)){const v=m.target.getAttribute(m.attributeName);if(v){const t=T(v);if(t!==v)m.target.setAttribute(m.attributeName,t);}}
+  })).observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:I18N_ATTRS});
+}
 document.getElementById('themeBtn').onclick=()=>{const dark=matchMedia('(prefers-color-scheme:dark)').matches;const cur=root.getAttribute('data-theme')||(dark?'dark':'light');const n=cur==='dark'?'light':'dark';applyTheme(n);store('mb-theme',n);};
 let toastT;const toastEl=document.getElementById('toast');
 function toast(m){toastEl.textContent=m;toastEl.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>toastEl.classList.remove('show'),1600);}
@@ -563,7 +686,7 @@ function renderSystems(){
     const on=stActive&&sy.id===activeSysId;
     const card=document.createElement('div');card.className='sys-card'+(on?' active':'');card.dataset.id=sy.id;
     card.innerHTML='<span class="del" aria-label="Löschen">✕</span>'+
-      '<div class="body"><div class="nm">'+esc(sy.name)+(on?(stConnected?' <span class="badge live">Verbunden</span>':' <span class="badge">Verbinde …</span>'):'')+'</div><div class="ad">'+esc(sy.host+':'+sy.port)+' · Gruppe '+esc(sy.group)+(sy.haGroup?' · HA-Gruppe '+esc(sy.haGroup):'')+(sy.hasKey?' · 🔒 AES':'')+'</div></div>'+
+      '<div class="body"><div class="nm"><span translate="no">'+esc(sy.name)+'</span>'+(on?(stConnected?' <span class="badge live">Verbunden</span>':' <span class="badge">Verbinde …</span>'):'')+'</div><div class="ad" translate="no">'+esc(sy.host+':'+sy.port)+' · '+T('Gruppe')+' '+esc(sy.group)+(sy.haGroup?' · '+T('HA-Gruppe')+' '+esc(sy.haGroup):'')+(sy.hasKey?' · 🔒 AES':'')+'</div></div>'+
       '<button class="edit" aria-label="Bearbeiten">✎</button><span class="openchev">›</span>';
     card.querySelector('.del').onclick=async(e)=>{e.stopPropagation();if(!await showConfirm('Anlage „'+sy.name+'" löschen?'))return;
       try{await postJSON('api/systems/delete',{id:sy.id});toast('Gelöscht: '+sy.name);await loadSystems();pollOnce();}catch(er){toast('Fehler: '+(er.message||er));}};
@@ -655,7 +778,7 @@ function setLcd(d,connected){
   const chars=t=>String(t||'').split('');
   let c1=(d&&d.cells1&&d.cells1.length)?d.cells1:chars(d&&d.line1);
   let c2=(d&&d.cells2&&d.cells2.length)?d.cells2:chars(d&&d.line2);
-  if(!connected){c1=[];c2=chars('nicht verbunden');}
+  if(!connected){c1=[];c2=chars(T('nicht verbunden'));}
   const blink=d&&d.cursorBlink;
   const showCur=connected&&blink&&blink!=='0'&&blink!==0&&blink!=='false';
   const pos=showCur?parseInt(d.cursorPos,10):-1;
@@ -717,9 +840,9 @@ const DEFAULT_IND=['Feuer','Wasseralarm','Heizung Störung'];
 let indSig='';
 function updateIndicators(list,connected){
   // display-only status indicators; names come from the panel, defaults until known
-  const items=(list&&list.length)?list:DEFAULT_IND.map(n=>({name:n,led:null}));
+  const items=(list&&list.length)?list:DEFAULT_IND.map(n=>({name:n,led:null,def:true}));
   const sig=items.map(i=>i.name).join('|');
-  if(sig!==indSig){indSig=sig;indRow.innerHTML='';items.forEach(i=>{const d=document.createElement('div');d.className='ind';d.innerHTML='<div class="dotled"></div><div class="nm"></div><div class="st">—</div>';d.querySelector('.nm').textContent=i.name;indRow.appendChild(d);});}
+  if(sig!==indSig){indSig=sig;indRow.innerHTML='';items.forEach(i=>{const d=document.createElement('div');d.className='ind';d.innerHTML='<div class="dotled"></div><div class="nm"></div><div class="st">—</div>';const nm=d.querySelector('.nm');nm.setAttribute('translate','no');nm.textContent=i.def?T(i.name):i.name;indRow.appendChild(d);});}
   Array.prototype.forEach.call(indRow.children,(el,k)=>{
     const led=items[k]&&items[k].led;
     if(!connected||!led){el.className='ind';el.querySelector('.st').textContent=connected?'Ruhe':'—';return;}
@@ -736,7 +859,7 @@ const tasterGrid=makeLiveGrid({
   renderItem:(it,el)=>{const active=it.led&&it.led.state&&it.led.state!=='off';const blink=it.led&&it.led.state==='blink';
     el.setAttribute('data-name',it.name);el.className='taster'+(active?' active':'')+(blink?' blink':'');
     const sled=document.createElement('span');sled.className='sled';el.appendChild(sled);
-    const nm=document.createElement('div');nm.className='tname';nm.textContent=it.name;el.appendChild(nm);
+    const nm=document.createElement('div');nm.className='tname';nm.setAttribute('translate','no');nm.textContent=it.name;el.appendChild(nm);
     const sub=document.createElement('div');sub.className='tsub';sub.textContent=active?'aktiv':'Taster';el.appendChild(sub);
     el.onclick=async()=>{
       if(el.parentElement&&el.parentElement.classList.contains('editing'))return; // reorder/hide mode: never send
@@ -758,7 +881,7 @@ const ledGrid=makeLiveGrid({
     el.setAttribute('data-name',it.name);
     el.className='led-card '+(it.color||'green')+(on?' on':'')+(blink?' blink':'');
     const big=document.createElement('div');big.className='led-big';el.appendChild(big);
-    const lbl=document.createElement('div');lbl.className='lbl';lbl.textContent=it.name;el.appendChild(lbl);}
+    const lbl=document.createElement('div');lbl.className='lbl';lbl.setAttribute('translate','no');lbl.textContent=it.name;el.appendChild(lbl);}
 });
 
 // ====================================================================
@@ -920,7 +1043,7 @@ function applySettings(d){
   if(typeof d.authRequired==='boolean')authRequired=d.authRequired;
   if(typeof d.passwordSet==='boolean')passwordSet=d.passwordSet;
   if(typeof d.control==='boolean')applyControl(d.control);
-  if(d.pollIntervalMs){const sel=document.getElementById('pollSel');const v=String(d.pollIntervalMs);if(![].some.call(sel.options,o=>o.value===v)){const o=document.createElement('option');o.value=v;o.textContent=(d.pollIntervalMs/1000).toLocaleString('de-DE')+' s';sel.appendChild(o);}sel.value=v;}
+  if(d.pollIntervalMs){const sel=document.getElementById('pollSel');const v=String(d.pollIntervalMs);if(![].some.call(sel.options,o=>o.value===v)){const o=document.createElement('option');o.value=v;o.textContent=(d.pollIntervalMs/1000).toLocaleString(LOCALE)+' s';sel.appendChild(o);}sel.value=v;}
   if(d.version)document.getElementById('verLine').textContent='Alarm Keypad '+d.version+' · '+(isHA()?'Home Assistant':'Docker');
   document.getElementById('secGroup').hidden=isHA();
   document.getElementById('pwBtn').textContent=passwordSet?'Ändern':'Festlegen';
@@ -983,6 +1106,7 @@ document.getElementById('ctlToggle').onclick=async(e)=>{
   try{const d=await postJSON('api/settings',{control:want,password:pw});ctlBusy=false;applySettings(d);toast(want?'Steuern ist an':'Nur-Lesen-Modus');}
   catch(er){ctlBusy=false;applyControl(controlOn);toast('Fehler: '+(er.message||er));}
 };
+{const ls=document.getElementById('langSel');const cur=load('mb-lang');ls.value=(cur==='en'||cur==='de')?cur:'';ls.onchange=()=>{try{if(ls.value)localStorage.setItem('mb-lang',ls.value);else localStorage.removeItem('mb-lang');}catch(e){}location.reload();};}
 document.getElementById('pollSel').onchange=async(e)=>{try{applySettings(await postJSON('api/settings',{pollIntervalMs:parseInt(e.target.value,10)}));toast('Gespeichert');}catch(er){toast('Fehler: '+(er.message||er));}};
 
 // ---- boot ----

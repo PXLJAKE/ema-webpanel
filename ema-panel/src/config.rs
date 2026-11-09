@@ -24,6 +24,9 @@ pub struct Options {
     /// Offer the Taster as HA buttons (only while control is on as well). Default off.
     #[serde(default)]
     pub mqtt_buttons: bool,
+    /// UI and entity language: "auto" (Home Assistant's language, else English), "en" or "de".
+    #[serde(default = "default_language")]
+    pub language: String,
 }
 
 fn default_port() -> u16 {
@@ -34,6 +37,27 @@ fn default_group() -> String {
 }
 fn default_poll() -> u64 {
     1000
+}
+fn default_language() -> String {
+    "auto".into()
+}
+
+/// "en" or "de" for an explicit choice, None for "auto" (or anything unknown).
+pub fn fixed_language(opt: &str) -> Option<&'static str> {
+    match opt.trim().to_ascii_lowercase().as_str() {
+        "de" | "deutsch" | "german" => Some("de"),
+        "en" | "english" | "englisch" => Some("en"),
+        _ => None,
+    }
+}
+
+/// Map a locale such as "de", "de-AT" or "en-GB" to the two supported languages.
+pub fn lang_from_locale(loc: &str) -> &'static str {
+    if loc.trim().to_ascii_lowercase().starts_with("de") {
+        "de"
+    } else {
+        "en"
+    }
 }
 
 /// Folder for persistent files (`systems.json`, `settings.json`). `DATA_DIR`, default `/data`.
@@ -85,6 +109,7 @@ impl Options {
             mqtt_buttons: env("MQTT_BUTTONS")
                 .map(|v| v == "true" || v == "1")
                 .unwrap_or(false),
+            language: env("UI_LANGUAGE").unwrap_or_else(default_language),
         }
     }
 }

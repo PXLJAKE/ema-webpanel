@@ -1,22 +1,45 @@
 configuration:
   panel_host:
     name: Panel address
-    description: IP address or hostname of the transmitter unit on your local network (e.g. 192.168.178.99). Only used to create the first system on first start; add and edit systems in the app under "Anlagen".
+    description: >-
+      IP address or host name of the panel's IP transmitter on your network, e.g. 192.168.178.99.
+      Only used to create the first system on the very first start. After that, add and edit
+      systems in the app under "Systems".
   panel_port:
     name: Panel port
-    description: Default is 8016.
+    description: Port of the IP transmitter. Usually 8016.
   user_group:
     name: User group
-    description: The same group number as in the panel entry of the original app (usually 1).
+    description: >-
+      Group number for the first system, the same as in the original app (usually 1). Later you
+      set the group per system in the app.
   control_enabled:
     name: Allow control
-    description: Off = view only (recommended while testing). On = keys, arm/disarm and buttons send real commands to the panel. Can also be switched in the app under ⚙ settings; a change here applies from the next add-on start.
+    description: >-
+      Off = view only, no commands are sent (recommended to start with). On = keypad keys, arm,
+      disarm and the function buttons send real commands; arm, disarm and buttons ask first.
+      You can also switch this in the app under ⚙ Settings. A change here takes effect when the
+      add-on restarts.
   poll_interval_ms:
-    name: Poll interval (ms)
-    description: How often the state is read. 1000 is a good value. Also adjustable in the app; a change here applies from the next start.
+    name: Refresh interval (ms)
+    description: >-
+      How often the state is read while connected. 1000 (once a second) works well. Also
+      adjustable in the app. A change here takes effect when the add-on restarts.
   mqtt_entities:
     name: Home Assistant entities (MQTT)
-    description: Shows buttons, LEDs and indicators as Home Assistant entities (dashboards, automations such as burglary alerts). Needs the Mosquitto broker. The add-on keeps its own connection for this that only reads the button/LED page and leaves the keypad free.
+    description: >-
+      Makes the panel's buttons, LEDs and indicators available as Home Assistant entities, for
+      dashboards and automations such as an intrusion alert. Needs the Mosquitto broker add-on.
+      Uses its own read-only connection that never takes the keypad, so the app and the real
+      keypad stay usable.
   mqtt_buttons:
-    name: Buttons in Home Assistant
-    description: Offers the Taster as buttons in Home Assistant. Only works while "Allow control" is on too. Fire, water and heating stay display-only.
+    name: Function buttons in Home Assistant
+    description: >-
+      Also offers the panel's function buttons as button entities. Only works while "Allow
+      control" is on. Fire, water and heating indicators always stay display-only.
+  language:
+    name: Language
+    description: >-
+      Language of the app and the entity names. "auto" follows the language of Home Assistant
+      (German or English, anything else becomes English). Changing it takes effect when the
+      add-on restarts.

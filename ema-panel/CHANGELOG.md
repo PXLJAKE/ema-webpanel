@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0
+- English and German. New option `language` (`auto` by default): `auto` follows Home Assistant (the HA profile language in the app, the HA system language for entity names), anything other than German becomes English; `en` or `de` fixes it. Each device can also choose in the app under ⚙ → Language. Standalone Docker follows the browser (or `UI_LANGUAGE`).
+- Names that come from the panel (buttons, LEDs, LCD, system names) are never translated.
+- Home Assistant entity names follow the language (e.g. "Panel connection", "Status Intrusion"); entity IDs that already exist stay the same.
+- Reworded add-on option texts in English and German; add-on log messages are now English.
+- The add-on reads the HA language through the Home Assistant API (`homeassistant_api: true`, read only). Sidebar entry renamed to "Alarm Keypad".
+- Setup guide now in English (`docs/SETUP.md`) and German (`docs/SETUP.de.md`); new English screenshots.
+
 ## 0.6.0
 - AES key per system (optional, hex): with a key, requests are sent and answers read encrypted like the original app (AES-ECB, PKCS7, hex); without one everything stays plain text. The key is stored in `/data/systems.json` and never sent to the browser; edit it in the system dialog (empty = keep, `-` = remove).
 - "Gruppe für HA" per system: the Home Assistant background session can use a different user group than the keypad (e.g. main group 3, HA group 2 with buttons and LEDs only). Replaces the `mqtt_group` option.
