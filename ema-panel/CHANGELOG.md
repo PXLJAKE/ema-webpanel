@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.4.1
+- Diagnostics: `GET /api/probe?mode=lock&group2=2` checks, with plain read-only GETs, whether a session that only reads the button/LED page blocks the keypad, whether a locked keypad answer still carries the status lamps, and what a second user group gets. Groundwork for Home Assistant entities.
+
 ## 0.4.0
 - Runs as a plain Docker container too (same image): `docker run -p 8099:8099 -v ema-data:/data ghcr.io/pxljake/ema-webpanel`. The app detects Home Assistant by the Supervisor token and otherwise runs standalone. No config files or variables needed; the first start walks you through the setup in the browser.
 - *Steuern erlauben* and the poll interval are now settings in the app (⚙), stored in `/data/settings.json`. In Home Assistant the add-on options seed them and a changed option wins on the next start.

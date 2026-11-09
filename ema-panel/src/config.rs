@@ -31,7 +31,10 @@ fn default_poll() -> u64 {
 
 /// Folder for persistent files (`systems.json`, `settings.json`). `DATA_DIR`, default `/data`.
 pub fn data_dir() -> String {
-    std::env::var("DATA_DIR").ok().filter(|v| !v.is_empty()).unwrap_or_else(|| "/data".into())
+    std::env::var("DATA_DIR")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| "/data".into())
 }
 
 pub fn options_path() -> String {
@@ -59,17 +62,26 @@ impl Options {
         let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
         Options {
             panel_host: env("PANEL_HOST").unwrap_or_default(),
-            panel_port: env("PANEL_PORT").and_then(|v| v.parse().ok()).unwrap_or(8016),
+            panel_port: env("PANEL_PORT")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(8016),
             user_group: env("USER_GROUP").unwrap_or_else(default_group),
-            control_enabled: env("CONTROL_ENABLED").map(|v| v == "true" || v == "1").unwrap_or(false),
-            poll_interval_ms: env("POLL_INTERVAL_MS").and_then(|v| v.parse().ok()).unwrap_or(1000),
+            control_enabled: env("CONTROL_ENABLED")
+                .map(|v| v == "true" || v == "1")
+                .unwrap_or(false),
+            poll_interval_ms: env("POLL_INTERVAL_MS")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1000),
         }
     }
 }
 
 /// Accept `host`, `host:port`, `http://host:port/` – a port inside the host wins.
 pub fn split_host_port(raw: &str, fallback: u16) -> (String, u16) {
-    let mut h = raw.trim().trim_start_matches("http://").trim_start_matches("https://");
+    let mut h = raw
+        .trim()
+        .trim_start_matches("http://")
+        .trim_start_matches("https://");
     h = h.trim_end_matches('/');
     if let Some((host, port)) = h.rsplit_once(':') {
         if let Ok(p) = port.parse::<u16>() {
@@ -86,7 +98,10 @@ mod tests {
     fn host_port_forms() {
         assert_eq!(split_host_port("a.net", 8016), ("a.net".into(), 8016));
         assert_eq!(split_host_port("a.net:9000", 8016), ("a.net".into(), 9000));
-        assert_eq!(split_host_port("http://a.net:9000/", 8016), ("a.net".into(), 9000));
+        assert_eq!(
+            split_host_port("http://a.net:9000/", 8016),
+            ("a.net".into(), 9000)
+        );
         assert_eq!(split_host_port("", 8016), ("".into(), 8016));
     }
 }
