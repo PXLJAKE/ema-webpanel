@@ -1,6 +1,6 @@
 [package]
 name = "ema-panel"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 description = "Home Assistant add-on: modern web keypad for an intrusion alarm panel (unofficial)"
 license = "MIT"
