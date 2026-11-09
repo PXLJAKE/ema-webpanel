@@ -30,9 +30,18 @@ Taster LEDs, the three indicators and the connection. Blinking counts as on; the
 carry `color` and `blink`.
 
 The add-on keeps its own background connection for this that only reads the button/LED page,
-so the keypad stays free. Best give it a user group of its own (**mqtt_group**, e.g. 2) that the
-panel only allows buttons and LEDs. The status lamps and the LCD of the keypad page are not
-part of it.
+so the keypad stays free (checked on a real panel). Best give it a user group of its own that
+the panel only allows buttons and LEDs: set **Gruppe für HA** when you add or edit a system.
+The HA entities belong to the first system in the list. The status lamps of the keypad page
+(Betrieb, Einbruch, Sabotage, ...) are only known while the keypad is open in the app; the rest
+of the time they show as unavailable.
+
+## AES key
+
+If the panel is set up with an AES key, enter it (hex, as in the original app) when you add or
+edit the system. Requests and answers are then encrypted like the original app does it; without
+a key everything stays plain text. The key is stored in `/data/systems.json` and never sent
+back to the browser.
 
 Taster show up as HA buttons only while **Steuern erlauben** and **mqtt_buttons** are both on.
 HA buttons have no confirmation, so think about which automations may press them.

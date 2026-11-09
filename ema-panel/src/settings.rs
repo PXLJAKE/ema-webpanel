@@ -280,7 +280,6 @@ mod tests {
             control_enabled: control,
             poll_interval_ms: poll,
             mqtt_entities: false,
-            mqtt_group: String::new(),
             mqtt_buttons: false,
         }
     }

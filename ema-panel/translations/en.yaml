@@ -17,9 +17,6 @@ configuration:
   mqtt_entities:
     name: Home Assistant entities (MQTT)
     description: Shows buttons, LEDs and indicators as Home Assistant entities (dashboards, automations such as burglary alerts). Needs the Mosquitto broker. The add-on keeps its own connection for this that only reads the button/LED page and leaves the keypad free.
-  mqtt_group:
-    name: User group for Home Assistant
-    description: Empty = the system's own group. Recommended is a group of its own (e.g. 2) that the panel allows only buttons and LEDs, without the keypad.
   mqtt_buttons:
     name: Buttons in Home Assistant
     description: Offers the Taster as buttons in Home Assistant. Only works while "Allow control" is on too. Fire, water and heating stay display-only.

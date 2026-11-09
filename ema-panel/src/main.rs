@@ -195,7 +195,7 @@ async fn run_poller(shared: Arc<Shared>, mut rx: mpsc::UnboundedReceiver<Cmd>) {
                 "polling {} ({}:{}, group {})",
                 target.name, target.host, target.port, target.group
             );
-            panel = Panel::new(&target.host, target.port, &target.group);
+            panel = Panel::with_key(&target.host, target.port, &target.group, &target.key);
             init = None;
             errors = 0;
             backoff = 2;
@@ -573,7 +573,7 @@ async fn systems_list(State(sh): State<Arc<Shared>>) -> Response {
         None
     };
     no_store(
-        Json(json!({ "ok": true, "systems": sh.systems.list(), "activeId": active }))
+        Json(json!({ "ok": true, "systems": sh.systems.list().iter().map(System::public).collect::<Vec<_>>(), "activeId": active }))
             .into_response(),
     )
 }
@@ -588,7 +588,7 @@ async fn systems_save(State(sh): State<Arc<Shared>>, Json(input): Json<SystemInp
                     *t = sys.clone();
                 }
             }
-            no_store(Json(json!({ "ok": true, "system": sys })).into_response())
+            no_store(Json(json!({ "ok": true, "system": sys.public() })).into_response())
         }
         Err(e) => reject(StatusCode::BAD_REQUEST, &e),
     }
@@ -1000,6 +1000,8 @@ async fn main() {
         host: opts.panel_host.clone(),
         port: opts.panel_port,
         group: opts.user_group.clone(),
+        key: String::new(),
+        ha_group: String::new(),
     });
     let store = systems::Store::load(
         &std::env::var("SYSTEMS_PATH").unwrap_or_else(|_| format!("{data}/systems.json")),

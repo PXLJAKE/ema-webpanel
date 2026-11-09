@@ -431,6 +431,8 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
     <div class="fld"><label for="fName">Name</label><input id="fName" maxlength="40" placeholder="z. B. Ferienhaus" autocomplete="off"></div>
     <div class="fld"><label for="fHost">Adresse</label><input id="fHost" placeholder="192.168.178.99 oder name.myfritz.net" autocapitalize="off" autocomplete="off" spellcheck="false" inputmode="url"></div>
     <div class="fld two"><div><label for="fPort">Port</label><input id="fPort" inputmode="numeric" value="8016"></div><div><label for="fGroup">Gruppe</label><select id="fGroup"><option>1</option><option>2</option><option>3</option><option>4</option></select></div></div>
+    <div class="fld two"><div><label for="fKey">AES-Schlüssel</label><input id="fKey" type="password" placeholder="leer = ohne" autocapitalize="off" autocomplete="off" spellcheck="false"></div><div><label for="fHaGroup">Gruppe für HA</label><select id="fHaGroup"><option value="">wie oben</option><option>1</option><option>2</option><option>3</option><option>4</option></select></div></div>
+    <p class="hint">AES-Schlüssel nur eintragen, wenn die Anlage einen hat (Hex, wie in der Original-App). „Gruppe für HA“ nutzt die Home-Assistant-Anbindung, am besten eine Gruppe nur mit Tastern und LEDs.</p>
     <p class="hint">Von außen: MyFRITZ-/DynDNS-Name und den am Router freigegebenen Port eintragen. Die Anlage selbst hat keinen Passwortschutz, gib den Port nur gezielt frei.</p>
     <div class="formerr" id="fErr"></div>
     <div class="row2"><button class="btn-ghost" id="sysCancel">Abbrechen</button><button class="btn-primary" id="sysSave">Speichern</button></div>
@@ -561,7 +563,7 @@ function renderSystems(){
     const on=stActive&&sy.id===activeSysId;
     const card=document.createElement('div');card.className='sys-card'+(on?' active':'');card.dataset.id=sy.id;
     card.innerHTML='<span class="del" aria-label="Löschen">✕</span>'+
-      '<div class="body"><div class="nm">'+esc(sy.name)+(on?(stConnected?' <span class="badge live">Verbunden</span>':' <span class="badge">Verbinde …</span>'):'')+'</div><div class="ad">'+esc(sy.host+':'+sy.port)+' · Gruppe '+esc(sy.group)+'</div></div>'+
+      '<div class="body"><div class="nm">'+esc(sy.name)+(on?(stConnected?' <span class="badge live">Verbunden</span>':' <span class="badge">Verbinde …</span>'):'')+'</div><div class="ad">'+esc(sy.host+':'+sy.port)+' · Gruppe '+esc(sy.group)+(sy.haGroup?' · HA-Gruppe '+esc(sy.haGroup):'')+(sy.hasKey?' · 🔒 AES':'')+'</div></div>'+
       '<button class="edit" aria-label="Bearbeiten">✎</button><span class="openchev">›</span>';
     card.querySelector('.del').onclick=async(e)=>{e.stopPropagation();if(!await showConfirm('Anlage „'+sy.name+'" löschen?'))return;
       try{await postJSON('api/systems/delete',{id:sy.id});toast('Gelöscht: '+sy.name);await loadSystems();pollOnce();}catch(er){toast('Fehler: '+(er.message||er));}};
@@ -575,6 +577,7 @@ if(window.Sortable){sysSortable=Sortable.create(sysList,{disabled:true,animation
 document.getElementById('editSysLink').onclick=(e)=>{editingSys=!editingSys;e.currentTarget.textContent=editingSys?'Fertig':'Bearbeiten';renderSystems();if(sysSortable)sysSortable.option('disabled',!editingSys);};
 // add / edit dialog
 const sysBg=document.getElementById('sysBg');
+function keyField(){const v=document.getElementById('fKey').value.trim();if(v==='-')return '';return v?v:undefined;}
 function openSysEditor(sy){
   editId=sy?sy.id:'';
   document.getElementById('sysTitle').textContent=sy?'Anlage bearbeiten':'Anlage hinzufügen';
@@ -582,6 +585,9 @@ function openSysEditor(sy){
   document.getElementById('fHost').value=sy?sy.host:'';
   document.getElementById('fPort').value=sy?sy.port:8016;
   document.getElementById('fGroup').value=sy?sy.group:'1';
+  document.getElementById('fHaGroup').value=sy&&sy.haGroup?sy.haGroup:'';
+  const fk=document.getElementById('fKey');fk.value='';
+  fk.placeholder=sy&&sy.hasKey?'gespeichert (leer = behalten, - = löschen)':'leer = ohne';
   document.getElementById('fErr').textContent='';
   sysBg.classList.add('open');
   setTimeout(()=>{try{document.getElementById('fName').focus();}catch(e){}},50);
@@ -593,7 +599,7 @@ document.getElementById('sysSave').onclick=async()=>{
   const portTxt=document.getElementById('fPort').value.trim();const port=portTxt?parseInt(portTxt,10):undefined;
   if(portTxt&&!(port>0&&port<65536)){err.textContent='Port: 1 bis 65535.';return;}
   try{
-    const d=await postJSON('api/systems',{id:editId||undefined,name:document.getElementById('fName').value,host:document.getElementById('fHost').value,port:port,group:document.getElementById('fGroup').value});
+    const d=await postJSON('api/systems',{id:editId||undefined,name:document.getElementById('fName').value,host:document.getElementById('fHost').value,port:port,group:document.getElementById('fGroup').value,haGroup:document.getElementById('fHaGroup').value,key:keyField()});
     sysBg.classList.remove('open');toast(editId?'Gespeichert':'Anlage hinzugefügt');
     if(!editId&&d.system&&systems.length===0)lastSys=d.system.id;
     await loadSystems();pollOnce();
