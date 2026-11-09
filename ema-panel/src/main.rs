@@ -20,7 +20,7 @@ use config::Options;
 use panel::{Button, Led, LedVal, Panel};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
@@ -28,6 +28,9 @@ use tokio::sync::mpsc;
 const INDEX_HTML: &str = include_str!("../web/index.html");
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const MAX_RAW: usize = 24_000;
+/// The panel allows only one user at its keypad at a time, so the add-on only holds a
+/// session while somebody asked for it and lets go after this much time without activity.
+const SESSION_MS: u64 = 5 * 60 * 1000;
 
 // ---------------------------------------------------------------- shared state
 
@@ -35,6 +38,12 @@ const MAX_RAW: usize = 24_000;
 #[serde(rename_all = "camelCase")]
 struct Snapshot {
     connected: bool,
+    /// someone asked for a connection (and it has not timed out / been closed yet)
+    active: bool,
+    /// when the wanted connection expires (ms since epoch), 0 when inactive
+    expires_at: u64,
+    /// inactivity time after which the connection is closed
+    idle_ms: u64,
     mode: &'static str,
     error: Option<String>,
     control: bool,
@@ -78,10 +87,21 @@ struct Shared {
     opts: Options,
     /// set while /api/probe runs so the poller leaves the panel alone
     paused: AtomicBool,
+    /// connection wanted until this time (ms since epoch); 0 = not wanted, poller stays idle
+    wanted_until: AtomicU64,
 }
 
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+}
+
+fn wanted(shared: &Shared) -> bool {
+    shared.wanted_until.load(Ordering::Relaxed) > now_ms()
+}
+
+/// Keep the connection for another `SESSION_MS` (connect, key press, explicit extend).
+fn touch(shared: &Shared) {
+    shared.wanted_until.store(now_ms() + SESSION_MS, Ordering::Relaxed);
 }
 
 fn clip(s: &str) -> String {
@@ -110,8 +130,25 @@ async fn run_poller(shared: Arc<Shared>, mut rx: mpsc::UnboundedReceiver<Cmd>) {
     let mut errors = 0u32;
     let mut backoff = 2u64;
     let mut fast = 0u32;
+    let mut idle_done = true;
 
     loop {
+        // ---- nobody asked for a connection: hold no session, show nothing stale
+        if !wanted(&shared) {
+            if !idle_done {
+                println!("connection closed (disconnect or {} s without activity)", SESSION_MS / 1000);
+                init = None;
+                errors = 0;
+                backoff = 2;
+                while rx.try_recv().is_ok() {} // never replay old commands later
+                let mut s = shared.snap.write().unwrap();
+                *s = Snapshot { mode: "plaintext", control: shared.opts.control_enabled, ..Default::default() };
+                idle_done = true;
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            continue;
+        }
+        idle_done = false;
         if shared.paused.load(Ordering::Relaxed) {
             init = None; // sessions are cheap, a fresh one after the probe is safest
             tokio::time::sleep(Duration::from_millis(250)).await;
@@ -302,6 +339,10 @@ async fn state(State(sh): State<Arc<Shared>>) -> Response {
     let mut snap = sh.snap.read().unwrap().clone();
     snap.control = sh.opts.control_enabled;
     snap.mode = "plaintext";
+    let until = sh.wanted_until.load(Ordering::Relaxed);
+    snap.active = until > now_ms();
+    snap.expires_at = if snap.active { until } else { 0 };
+    snap.idle_ms = SESSION_MS;
     snap.raw = Raw::default(); // keep the poll payload small; raw is in /api/connect-test
     no_store(Json(snap).into_response())
 }
@@ -339,6 +380,24 @@ async fn probe_route(State(sh): State<Arc<Shared>>) -> Response {
     no_store(Json(r).into_response())
 }
 
+/// Ask the add-on to open (or keep open) the session to the panel. JSON only, like /api/key.
+async fn connect(State(sh): State<Arc<Shared>>, Json(_): Json<serde_json::Value>) -> Response {
+    if sh.opts.panel_host.is_empty() {
+        return reject(StatusCode::SERVICE_UNAVAILABLE, "Kein Panel-Host in den Add-on-Optionen eingetragen.");
+    }
+    if !wanted(&sh) {
+        println!("connection requested");
+    }
+    touch(&sh);
+    no_store(Json(json!({ "ok": true, "expiresAt": sh.wanted_until.load(Ordering::Relaxed) })).into_response())
+}
+
+/// Let go of the panel so someone else (e.g. the original app) can use the keypad.
+async fn disconnect(State(sh): State<Arc<Shared>>, Json(_): Json<serde_json::Value>) -> Response {
+    sh.wanted_until.store(0, Ordering::Relaxed);
+    no_store(Json(json!({ "ok": true })).into_response())
+}
+
 #[derive(Deserialize)]
 struct KeyReq {
     key: Option<String>,
@@ -357,9 +416,10 @@ async fn key(State(sh): State<Arc<Shared>>, Json(req): Json<KeyReq>) -> Response
     if !sh.opts.control_enabled {
         return reject(StatusCode::FORBIDDEN, "Steuern ist in den Add-on-Optionen ausgeschaltet.");
     }
-    if !sh.snap.read().unwrap().connected {
+    if !wanted(&sh) || !sh.snap.read().unwrap().connected {
         return reject(StatusCode::SERVICE_UNAVAILABLE, "Keine Verbindung zur Anlage.");
     }
+    touch(&sh); // a key press counts as activity
     let cmd = match (req.key.as_deref(), req.taster) {
         (Some(k), None) => match panel::keypad_code(k) {
             Some(code) => {
@@ -400,10 +460,11 @@ async fn main() {
 
     let (tx, rx) = mpsc::unbounded_channel();
     let shared = Arc::new(Shared {
-        snap: RwLock::new(Snapshot { mode: "plaintext", control: opts.control_enabled, error: Some("Verbinde …".into()), ..Default::default() }),
+        snap: RwLock::new(Snapshot { mode: "plaintext", control: opts.control_enabled, ..Default::default() }),
         tx,
         opts: opts.clone(),
         paused: AtomicBool::new(false),
+        wanted_until: AtomicU64::new(0),
     });
 
     tokio::spawn(run_poller(shared.clone(), rx));
@@ -415,6 +476,8 @@ async fn main() {
         .route("/api/connect-test", get(connect_test))
         .route("/api/probe", get(probe_route))
         .route("/api/key", post(key))
+        .route("/api/connect", post(connect))
+        .route("/api/disconnect", post(disconnect))
         .with_state(shared);
 
     let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8099);
